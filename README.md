@@ -35,3 +35,23 @@ The final optimized code must pass compilation, unit tests, randomized different
 **Technologies:** Python, LLVM/MLIR, gRPC or RabbitMQ, Docker, Redis, C/C++, and CUDA.
 
 **Research question:** Can a distributed group of specialized AI agents produce safer and more effective compiler optimizations than a single AI agent while tolerating communication delays and agent failures?
+
+## 5. Distributed Code Vulnerability Scanner
+
+Build a distributed system that splits a codebase across worker nodes, scans each part for security vulnerabilities in parallel, and combines the findings into one ranked report.
+
+Each component has its own job:
+
+- Coordinator: clones the repo, splits it into shards by file or module, and assigns work over gRPC
+- Static analysis workers: run SAST tools (Bandit, SonarQube) on their shard
+- Dependency worker: checks manifests (package.json, requirements.txt, go.mod) against CVE databases (OSV, NVD)
+- Secrets worker: scans files and git history for leaked keys and credentials
+- Aggregator: removes duplicate findings, links related issues across files, and ranks them by severity (CVSS)
+- LLM triage agent: reviews each finding, flags likely false positives, and suggests a fix
+
+Evaluation:
+
+- Scan time as the number of workers grows (1, 2, 4, 8)
+- How long it takes to recover when a worker is killed mid-scan
+- Speedup from the cache on incremental rescans
+- Detection accuracy on known-vulnerable repos
