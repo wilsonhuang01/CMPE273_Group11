@@ -1,5 +1,5 @@
 # CMPE273_Group11
-Repo for CMPE 273 group 11
+
 
 # Project ideas
 
@@ -77,3 +77,17 @@ Evaluation:
 - How long it takes to recover when a worker is killed mid-scan
 - Speedup from the cache on incremental rescans
 - Detection accuracy on known-vulnerable repos
+
+## 6. Community Receipt and Local Deal Intelligence System
+This project builds a platform where users upload shopping-receipt images. The system uses OCR and AI to identify stores, products, quantities, discounts, and prices, then compares those purchases with crowdsourced receipt data and available offers from nearby stores.
+
+Key features include receipt image upload, product-name normalization, duplicate detection, store geolocation, price-history tracking, nearby-store search, deal ranking, user corrections, confidence scores, and privacy controls. Users could receive recommendations such as which nearby store currently offers a lower price for the same product.
+
+The distributed architecture can include upload services, parallel OCR workers, product-normalization workers, a price database, a geographic search service, and a recommendation service. A message queue distributes receipt-processing tasks, while replicated databases and regional caches improve availability and response time.
+
+An agentic AI component can interpret unclear receipt text, resolve product aliases, ask users to confirm uncertain items, explain recommendations, and detect suspicious prices. Every recommendation should cite its supporting receipt or offer.
+
+A possible stack includes React or Flutter, Python/FastAPI or Go, Tesseract or PaddleOCR, PostgreSQL with PostGIS, Redis Streams or RabbitMQ, Docker Compose, and optional AWS services.
+
+Evaluation can measure OCR accuracy, product matching, deal precision, processing latency, throughput, recommendation quality, duplicate detection, and recovery after worker failures.
+
