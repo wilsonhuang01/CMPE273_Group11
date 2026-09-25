@@ -6,8 +6,16 @@ Repo for CMPE 273 group 11
 ## 1. Distributed file system
 Store and replicate files across several storage
 
-## 2. Peer-to-peer file system
-Distribute peer-uploaded files among peers, no central server
+## 2. Carbon-Aware Distributed Job Scheduler
+This project builds a fault-tolerant scheduler that assigns data-center workloads according to carbon intensity, electricity cost, server capacity, job priority, and deadlines. Instead of immediately running every job, the system can delay flexible workloads or move them to another region with cleaner or cheaper electricity.
+
+The system simulates three data-center regions, each containing worker nodes, a local queue, monitoring service, and regional scheduler. A central coordinator collects capacity, health, cost, and carbon-intensity information before assigning jobs. Jobs can be urgent, deadline-sensitive, flexible, or location-constrained.
+
+Key features include distributed resource discovery, containerized job execution, carbon-aware placement, delayed scheduling, load balancing, worker heartbeats, job migration, failure detection, retry handling, and backup-scheduler failover. Optional features include an agentic AI assistant that recommends workload migration or scheduling-policy changes while a deterministic policy engine controls actual execution.
+
+The technology stack could include Python or Go, Docker Compose, REST or gRPC communication, Redis or SQLite for queues and scheduler state, and Prometheus-style monitoring. AWS EC2 could optionally simulate geographically distributed regions.
+
+Evaluation would compare first-available, least-loaded, lowest-cost, and carbon-aware policies using total carbon emissions, electricity cost, job completion time, deadline violations, worker utilization, scheduling overhead, migration frequency, and recovery time after failures. This project demonstrates distributed scheduling, fault tolerance, load balancing, consistency, and sustainability.
 
 ## 3. Agent-Assisted Ransomware-Resistant Distributed File System
 This project develops an enterprise distributed file-storage system designed to detect ransomware-like activity and recover files safely. Files are divided into chunks, identified using cryptographic hashes, and replicated across at least three storage nodes. A metadata coordinator tracks file locations, versions, replicas, and node health.
