@@ -3,8 +3,14 @@ Repo for CMPE 273 group 11
 
 # Project ideas
 
-## 1. Distributed file system
-Store and replicate files across several storage
+## 1. Distributed Multi-Vendor Engineering Knowledge Assistant
+This project builds a distributed platform that helps engineers summarize and analyze technical information from multiple vendors and service providers. It processes application logs, cloud documentation, API references, configuration files, maintenance journals, incident reports, support tickets, and technical articles.
+
+The system uses distributed ingestion workers to parse, clean, chunk, deduplicate, and index documents. A coordinator assigns tasks across processing nodes, while replicated metadata and retry mechanisms provide fault tolerance. Engineers can search across sources, generate incident timelines, compare conflicting vendor instructions, and retrieve relevant troubleshooting guidance.
+
+An agentic AI component interprets questions, selects relevant sources, summarizes findings, identifies possible root causes, and recommends next steps. Every important claim must include citations to original documents, while a policy layer prevents unsupported or dangerous actions.
+
+The tech stack could include Python or Go, Docker Compose, REST or gRPC, Redis Streams or NATS, PostgreSQL or SQLite, OpenSearch or a vector database, and an optional language model. Evaluation can measure ingestion throughput, query latency, fault recovery, search relevance, summary quality, citation accuracy, and false recommendations.
 
 ## 2. Carbon-Aware Distributed Job Scheduler
 This project builds a fault-tolerant scheduler that assigns data-center workloads according to carbon intensity, electricity cost, server capacity, job priority, and deadlines. Instead of immediately running every job, the system can delay flexible workloads or move them to another region with cleaner or cheaper electricity.
