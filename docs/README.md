@@ -1,6 +1,6 @@
 # Project documentation
 
-Status as of **November 20, 2026**, after the local step 16 release: the complete
+Status as of **November 20, 2026**, after the local release: the complete
 CPU optimization workflow is implemented and evaluated on this machine. It
 connects specialized agents, RabbitMQ delivery, mandatory automated correctness
 checks, paired benchmarking, weighted coordinator selection, bounded recovery,
@@ -82,7 +82,7 @@ contracts, not validated hardware recovery.
   hardware limits, measured results, demonstration and packaging.
 
 Older schema versions and workflow contracts remain documented where they explain
-compatibility and resumption. Their version numbers are migration history, not
-unfinished implementation steps. The recorded release archives and benchmark
+compatibility and resumption. Their version numbers record migration history.
+The recorded release archives and benchmark
 snapshots are immutable historical evidence; this documentation describes the
 current source tree and may include corrections made after those archives.

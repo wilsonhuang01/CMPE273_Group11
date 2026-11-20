@@ -103,22 +103,22 @@ python -m compiler_optimizer.coordinator.pipeline \
   --benchmark-plan examples/sum-array.benchmark.json
 ```
 
-The [step 10 guide](docs/performance-pipeline.md) covers structured patches and
+The [Performance Agent workflow guide](docs/performance-pipeline.md) covers structured patches and
 rationale, confirmed RabbitMQ delivery, verification, benchmarking, baseline
 fallback, crash resumption and coordinator result RPC. The starter Performance
 Agent uses a deterministic example rule with a replaceable patch backend.
 
 ## Specialized agents
 
-Step 11 adds [Memory and Architecture generators, Correctness and Critic reviews,
-and Benchmark work organization](docs/specialized-agents.md). Select a generator
+The [specialized agents](docs/specialized-agents.md) provide Memory and Architecture
+generators, Correctness and Critic reviews, and Benchmark work organization. Select a generator
 with `--agent memory` or `--agent architecture`; both reviewers and the Benchmark
 Agent run automatically. Role-specific objectives and durable iteration limits
 apply. Passing automated tests and measured qualification remain mandatory.
 
 ## Coordinator selection
 
-Step 12 adds [weighted cohort selection](docs/coordinator-selection.md), with
+The coordinator uses [weighted cohort selection](docs/coordinator-selection.md), with
 unanimous Correctness/Critic votes, explicit runtime/memory weights, confidence
 bounds, deterministic tie breakers and an immutable decision audit:
 
@@ -132,7 +132,7 @@ The original program is retained when no candidate shows a reliable weighted gai
 
 ## Fault recovery
 
-Step 13 adds [leased execution, healthy-worker retries and scoped Redis quarantine](docs/fault-recovery.md).
+Fault recovery provides [leased execution, healthy-worker retries and scoped Redis quarantine](docs/fault-recovery.md).
 The cohort CLI enables recovery by default with two local sandbox workers. RabbitMQ
 uses manual acknowledgements, confirmed delayed retries and dead letters; stale
 workers cannot commit results. Two matching crashes on separate healthy workers
@@ -144,7 +144,7 @@ heartbeat/lease timing, backoff and blacklist expiry. Resume with the stored tas
 
 ## Observability and failure tests
 
-Step 14 adds [structured JSON events, Prometheus metrics and a provisioned Grafana dashboard](docs/observability.md)
+Observability includes [structured JSON events, Prometheus metrics and a provisioned Grafana dashboard](docs/observability.md)
 for queue depth, task duration, worker health, retries, crashes and accepted gains.
 Compose starts Prometheus at <http://localhost:9090> and Grafana at
 <http://localhost:3000/d/compiler-optimizer>. For host optimization commands, serve
@@ -155,7 +155,7 @@ infinite loops, memory exhaustion and compiler errors while preserving acceptanc
 
 ## RISC-V validation and local capabilities
 
-Step 15 implements the [locally testable architecture extension](docs/architectures.md):
+The [architecture extension](docs/architectures.md) supports
 controlled target profiles and RV64GC C/C++ correctness validation with QEMU inside
 a native Docker container. Mandatory tests and trapping UBSan remain enabled.
 Emulator results cannot qualify performance gains; the coordinator retains the original.

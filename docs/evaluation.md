@@ -167,7 +167,7 @@ pass the actual directories printed by your completed runs:
   --evidence var/demo/YOUR_PASSED_RUN
 ```
 
-The recorded local step 16 archive is `dist/compiler-optimizer-step16.tar.gz`,
+The recorded local release archive is `dist/compiler-optimizer-step16.tar.gz`,
 with a matching `.sha256` file. It includes the original comparison and demo
 evidence; documentation corrections made after that release do not rewrite it.
 
