@@ -1,0 +1,216 @@
+name: ${COMPOSE_PROJECT_NAME:-cmpe273-group11}
+
+x-app: &app
+  image: cmpe273-optimizer:dev
+  build: .
+  init: true
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  stop_grace_period: 20s
+  healthcheck:
+    test: [CMD, python, -m, compiler_optimizer.runtime.healthcheck]
+    interval: 5s
+    timeout: 3s
+    retries: 6
+    start_period: 15s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+x-environment: &environment
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_USER: ${RABBITMQ_USER:-optimizer}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-optimizer-dev-password}
+  REDIS_HOST: redis
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+  PROBE_INTERVAL_SECONDS: ${PROBE_INTERVAL_SECONDS:-5}
+  COORDINATOR_HEALTH_URL: http://coordinator:8080/readyz
+  STATE_DIRECTORY: /var/lib/compiler-optimizer
+
+services:
+  compiler-arm:
+    profiles: [native-arm]
+    image: cmpe273-arm:18
+    platform: linux/arm64
+    build:
+      context: .
+      dockerfile: docker/compiler.Dockerfile
+      args: {EXECUTION_TARGET: linux-aarch64}
+    entrypoint: [clang-18]
+    command: [--version]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  compiler-cuda:
+    profiles: [cuda-compile]
+    image: cmpe273-cuda-compile:13.0
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: docker/cuda.Dockerfile
+    entrypoint: [/usr/local/cuda-13.0/bin/nvcc]
+    command: [--version]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  compiler-riscv:
+    profiles: [riscv]
+    image: cmpe273-riscv:18
+    build:
+      context: .
+      dockerfile: docker/riscv.Dockerfile
+    entrypoint: [qemu-riscv64]
+    command: [--version]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  compiler:
+    profiles: [toolchain]
+    image: cmpe273-clang:18
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: docker/compiler.Dockerfile
+    entrypoint: [clang-18]
+    command: [--version]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    hostname: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-optimizer}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-optimizer-dev-password}
+    ports:
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+      - "127.0.0.1:${RABBITMQ_AMQP_PORT:-5672}:5672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./monitoring/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, check_running]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-dev-password}
+      REDISCLI_AUTH: ${REDIS_PASSWORD:-redis-dev-password}
+    command:
+      - sh
+      - -c
+      - 'exec redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDIS_PASSWORD"'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  coordinator:
+    <<: *app
+    command: [--role, coordinator]
+    environment: *environment
+    ports:
+      - "127.0.0.1:${COORDINATOR_GRPC_PORT:-50051}:50051"
+      - "127.0.0.1:${COORDINATOR_HEALTH_PORT:-18080}:8080"
+    volumes:
+      - coordinator-data:/var/lib/compiler-optimizer
+    depends_on:
+      rabbitmq: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  scheduler:
+    <<: *app
+    command: [--role, scheduler]
+    environment: *environment
+    ports:
+      - "127.0.0.1:${SCHEDULER_HEALTH_PORT:-18081}:8080"
+    depends_on:
+      coordinator: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  worker:
+    <<: *app
+    command: [--role, worker]
+    environment: *environment
+    ports:
+      - "127.0.0.1:${WORKER_HEALTH_PORT:-18082}:8080"
+    depends_on:
+      scheduler: {condition: service_healthy}
+      coordinator: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  prometheus:
+    image: prom/prometheus:v3.13.5
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://localhost:9090/-/ready]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      coordinator: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana-dev-password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://localhost:3000/api/health]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      prometheus: {condition: service_healthy}
+
+volumes:
+  coordinator-data:
+  rabbitmq-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:

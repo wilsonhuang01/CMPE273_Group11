@@ -1,0 +1,22 @@
+groups:
+  - name: optimizer
+    rules:
+      - alert: OptimizerServiceUnavailable
+        expr: up{job="optimizer-services"} == 0 or optimizer_service_ready == 0
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: "Optimizer service unavailable or dependency probe failing"}
+      - alert: OptimizerWorkerStale
+        expr: optimizer_stale_assigned_workers > 0
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: "Registered execution worker heartbeat is stale"}
+      - alert: OptimizerRecoveryExhausted
+        expr: increase(optimizer_recovery_terminal_total{reason="infrastructure_attempts_exhausted"}[5m]) > 0
+        labels: {severity: warning}
+        annotations: {summary: "Candidate infrastructure retry budget exhausted"}
+      - alert: OptimizerQueueBacklog
+        expr: rabbitmq_queue_messages_ready > 20
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: "RabbitMQ ready-message backlog persists"}

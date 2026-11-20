@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "comparison": {"mode": "exact"},
+  "sanitizer": "undefined",
+  "generator": {
+    "kind": "integer_array",
+    "seed": 273,
+    "random_cases": 4,
+    "fuzz_cases": 4,
+    "min_length": 0,
+    "max_length": 64,
+    "min_value": -1000000,
+    "max_value": 1000000,
+    "args": []
+  }
+}

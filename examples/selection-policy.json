@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "performance_weight": 0.7,
+  "memory_weight": 0.3,
+  "minimum_weighted_gain": 0.01,
+  "alpha": 0.05,
+  "tie_digits": 6,
+  "maximum_candidates": 6
+}

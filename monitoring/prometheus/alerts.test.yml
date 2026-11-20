@@ -1,0 +1,40 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 5s
+tests:
+  - name: completed idle registrations do not alert
+    interval: 5s
+    input_series:
+      - series: 'optimizer_workers{state="stale",job="optimizer-host"}'
+        values: '2+0x12'
+      - series: 'optimizer_stale_assigned_workers{job="optimizer-host"}'
+        values: '0+0x12'
+    alert_rule_test:
+      - eval_time: 35s
+        alertname: OptimizerWorkerStale
+        exp_alerts: []
+  - name: an assigned worker with lost heartbeats alerts
+    interval: 5s
+    input_series:
+      - series: 'optimizer_stale_assigned_workers{job="optimizer-host"}'
+        values: '1+0x12'
+    alert_rule_test:
+      - eval_time: 35s
+        alertname: OptimizerWorkerStale
+        exp_alerts:
+          - exp_labels: {job: optimizer-host, severity: warning}
+            exp_annotations: {summary: "Registered execution worker heartbeat is stale"}
+  - name: the first exhausted retry budget alerts
+    interval: 5s
+    input_series:
+      - series: 'optimizer_recovery_terminal_total{reason="infrastructure_attempts_exhausted",job="optimizer-host"}'
+        values: '0 0 0 1+0x57'
+    alert_rule_test:
+      - eval_time: 20s
+        alertname: OptimizerRecoveryExhausted
+        exp_alerts:
+          - exp_labels:
+              job: optimizer-host
+              reason: infrastructure_attempts_exhausted
+              severity: warning
+            exp_annotations: {summary: "Candidate infrastructure retry budget exhausted"}

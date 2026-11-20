@@ -1,0 +1,225 @@
+syntax = "proto3";
+
+package compiler_optimizer.v1;
+
+// Field numbers must never be reused. See docs/contracts.md for semantic rules.
+message Metadata {
+  uint32 schema_version = 1;
+  string message_id = 2;
+  string task_id = 3;
+  uint64 created_at_unix_ms = 4;
+}
+
+message ArtifactRef {
+  string key = 1;
+  string sha256 = 2;
+  uint64 size_bytes = 3;
+}
+
+message ResourceLimits {
+  uint32 compile_wall_seconds = 1;
+  uint32 compile_memory_mib = 2;
+  uint32 run_wall_seconds = 3;
+  uint32 run_memory_mib = 4;
+  uint32 output_kib = 5;
+}
+
+message TestCase {
+  string id = 1;
+  string stdin = 2;
+  string expected_stdout = 3;
+  repeated string args = 4;
+}
+
+message SubmissionManifest {
+  uint32 schema_version = 1;
+  string name = 2;
+  string language = 3;
+  repeated string sources = 4;
+  repeated TestCase tests = 5;
+  repeated string benchmark_test_ids = 6;
+  ResourceLimits limits = 7;
+}
+
+message CompilerSettings {
+  string executable = 1;
+  string version = 2;
+  string image_digest = 3;
+  string language = 4;
+  string target = 5;
+  repeated string flags = 6;
+}
+
+// A source-only bundle. The baseline is version 1 with no parent hash.
+message SourceVersion {
+  uint32 version = 1;
+  ArtifactRef bundle = 2;
+  string parent_source_sha256 = 3;
+}
+
+message Submission {
+  Metadata meta = 1;
+  SubmissionManifest manifest = 2;
+  ArtifactRef package = 3;
+  SourceVersion source = 4;
+  CompilerSettings compiler = 5;
+}
+
+enum AgentRole {
+  AGENT_ROLE_UNSPECIFIED = 0;
+  PERFORMANCE = 1;
+  MEMORY = 2;
+  CORRECTNESS = 3;
+  ARCHITECTURE = 4;
+  CRITIC = 5;
+  BENCHMARK = 6;
+}
+
+message OptimizationRequest {
+  Metadata meta = 1;
+  string proposal_id = 2;
+  AgentRole role = 3;
+  SubmissionManifest manifest = 4;
+  SourceVersion source = 5;
+  CompilerSettings compiler = 6;
+}
+
+message Proposal {
+  Metadata meta = 1;
+  string proposal_id = 2;
+  AgentRole role = 3;
+  SourceVersion source = 4;
+  string rationale = 5;
+  string transformation = 6;
+  CompilerSettings compiler = 7;
+}
+
+message VerificationJob {
+  Metadata meta = 1;
+  string job_id = 2;
+  oneof subject {
+    bool baseline = 3;
+    string proposal_id = 4;
+  }
+  SourceVersion source = 5;
+  SubmissionManifest manifest = 6;
+  CompilerSettings compiler = 7;
+  uint32 attempt = 8;
+  uint64 deadline_unix_ms = 9;
+  repeated string additional_test_ids = 10;
+  optional ArtifactRef verification_plan = 11;
+  optional ArtifactRef verification_inputs = 12;
+}
+
+enum WorkerState {
+  WORKER_STATE_UNSPECIFIED = 0;
+  IDLE = 1;
+  BUSY = 2;
+  QUARANTINED = 3;
+}
+
+message WorkerHeartbeat {
+  Metadata meta = 1;
+  string worker_id = 2;
+  string incarnation_id = 3;
+  uint64 sequence = 4;
+  WorkerState state = 5;
+  optional string current_job_id = 6;
+  repeated string targets = 7;
+}
+
+enum FailureReason {
+  FAILURE_REASON_UNSPECIFIED = 0;
+  COMPILATION_ERROR = 1;
+  OUTPUT_MISMATCH = 2;
+  NONZERO_EXIT = 3;
+  SIGNAL_TERMINATION = 4;
+  TIMEOUT = 5;
+  MEMORY_LIMIT = 6;
+  OUTPUT_LIMIT = 7;
+  INFRASTRUCTURE_ERROR = 8;
+  UNKNOWN_FAILURE = 9;
+  SANITIZER_FAILURE = 10;
+}
+
+enum FailureStage {
+  FAILURE_STAGE_UNSPECIFIED = 0;
+  COMPILE = 1;
+  TEST = 2;
+  MEASURE = 3;
+  INFRASTRUCTURE = 4;
+}
+
+message FailureDetails {
+  FailureReason reason = 1;
+  FailureStage stage = 2;
+  string message = 3;
+  optional string test_id = 4;
+  optional sint32 exit_code = 5;
+  optional uint32 signal_number = 6;
+}
+
+message BenchmarkMeasurement {
+  string test_id = 1;
+  repeated double wall_seconds = 2;
+  uint64 peak_memory_bytes = 3;
+  uint32 warmup_runs = 4;
+}
+
+message VerificationSuccess {
+  repeated string passed_test_ids = 1;
+  repeated BenchmarkMeasurement benchmarks = 2;
+}
+
+message VerificationResult {
+  Metadata meta = 1;
+  string job_id = 2;
+  string worker_id = 3;
+  uint32 attempt = 4;
+  oneof subject {
+    bool baseline = 5;
+    string proposal_id = 6;
+  }
+  SourceVersion source = 7;
+  CompilerSettings compiler = 8;
+  string hardware = 9;
+  oneof outcome {
+    VerificationSuccess success = 10;
+    FailureDetails failure = 11;
+  }
+  optional ArtifactRef log = 12;
+  optional ArtifactRef correctness_report = 13;
+}
+
+message Receipt {
+  Metadata meta = 1;
+  string accepted_message_id = 2;
+}
+
+message OptimizationQuery {
+  string task_id = 1;
+}
+
+// Internal status API; artifact references use the coordinator-owned artifact store.
+message OptimizationResult {
+  string task_id = 1;
+  string status = 2;
+  string stage = 3;
+  string report_json = 4;
+  optional ArtifactRef report = 5;
+  optional SourceVersion selected_source = 6;
+}
+
+service CoordinatorService {
+  rpc SubmitSubmission(Submission) returns (Receipt);
+  rpc SubmitProposal(Proposal) returns (Receipt);
+  rpc GetOptimizationResult(OptimizationQuery) returns (OptimizationResult);
+}
+
+service AgentService {
+  rpc GenerateProposal(OptimizationRequest) returns (Proposal);
+}
+
+service WorkerHealthService {
+  rpc ReportHeartbeat(WorkerHeartbeat) returns (Receipt);
+}

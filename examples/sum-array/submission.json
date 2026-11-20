@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "name": "sum-array",
+  "language": "c17",
+  "sources": ["main.c"],
+  "tests": [
+    {
+      "id": "empty",
+      "stdin": "tests/empty.in",
+      "expected_stdout": "tests/empty.out",
+      "args": []
+    },
+    {
+      "id": "mixed",
+      "stdin": "tests/mixed.in",
+      "expected_stdout": "tests/mixed.out",
+      "args": []
+    }
+  ],
+  "benchmark_test_ids": ["mixed"],
+  "limits": {
+    "compile_wall_seconds": 30,
+    "compile_memory_mib": 1024,
+    "run_wall_seconds": 2,
+    "run_memory_mib": 256,
+    "output_kib": 64
+  }
+}

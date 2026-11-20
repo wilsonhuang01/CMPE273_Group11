@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77,<83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "distributed-compiler-optimizer"
+version = "0.1.0"
+description = "Fault-tolerant compiler optimization with specialized AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "grpcio>=1.76,<2",
+    "jsonschema>=4.23,<5",
+    "protobuf>=6.31.1,<7",
+    "pika>=1.3,<2",
+    "prometheus-client>=0.21,<1",
+    "redis>=5,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2,<2",
+    "clang-format>=18,<19",
+    "cmake>=3.25,<5",
+    "grpcio-tools==1.76.0",
+    "pytest>=8,<10",
+    "ruff>=0.9,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"compiler_optimizer.shared.v1" = ["*.proto", "*.json", "*.pyi"]
+"compiler_optimizer.storage" = ["*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-config --strict-markers"
+markers = ["docker: opt-in baseline compilation/execution against a real Docker daemon"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/compiler_optimizer/shared/v1/contracts_pb2*.py" = ["ALL"]
+"src/compiler_optimizer/shared/v1/contracts_pb2.pyi" = ["ALL"]
+
+[tool.ruff.format]
+exclude = ["src/compiler_optimizer/shared/v1/contracts_pb2*.py", "src/compiler_optimizer/shared/v1/*.pyi"]

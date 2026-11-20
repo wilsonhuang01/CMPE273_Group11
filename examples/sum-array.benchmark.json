@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "warmups": 2,
+  "repetitions": 15,
+  "seed": 273,
+  "cpu_id": null,
+  "minimum_relative_improvement": 0.05,
+  "maximum_relative_mad": 0.10,
+  "maximum_memory_regression": 0.05,
+  "alpha": 0.05,
+  "minimum_sample_seconds": 0.01
+}

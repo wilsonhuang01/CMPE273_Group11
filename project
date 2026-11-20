@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cd "$PROJECT_ROOT"
+if [ ! -x .venv/bin/python ]; then
+    python3 -m venv .venv
+fi
+if ! .venv/bin/python -c 'import compiler_optimizer.evaluation, grpc, prometheus_client' >/dev/null 2>&1; then
+    .venv/bin/python -m pip install -e .
+fi
+exec .venv/bin/python tools/project.py "$@"

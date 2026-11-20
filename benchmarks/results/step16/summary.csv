@@ -1,0 +1,7 @@
+trial,workload,strategy,status,speedup_ratio,memory_change_fraction,runtime_seconds,peak_rss_bytes,correctness_failures,optimization_elapsed_seconds,sandbox_invocations
+1,reduction-250000,original,reference,1.0,0.0,0.034896104498329805,3440640.0,0,0,0
+1,reduction-250000,multi,retained_baseline,1.0,0.0,0.034896104498329805,3440640.0,0,65.65319729200564,180
+1,reduction-250000,single,retained_baseline,1.0,0.0,0.034896104498329805,3440640.0,0,65.27541000000201,180
+1,reduction-750000,original,reference,1.0,0.0,0.05777097949976451,7372800.0,0,0,0
+1,reduction-750000,multi,selected,1.0572225931353076,-0.8,0.054582916003710125,1474560,0,76.56024854106363,180
+1,reduction-750000,single,retained_baseline,1.0,0.0,0.05777097949976451,7372800.0,0,76.59327283396851,180

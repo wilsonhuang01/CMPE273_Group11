@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "maximum_attempts": 3,
+  "lease_seconds": 15.0,
+  "heartbeat_seconds": 2.0,
+  "worker_health_seconds": 10.0,
+  "attempt_timeout_seconds": 3600.0,
+  "backoff_seconds": 1.0,
+  "maximum_backoff_seconds": 30.0,
+  "jitter_fraction": 0.2,
+  "worker_cooldown_seconds": 5.0,
+  "cleanup_grace_seconds": 5.0,
+  "blacklist_ttl_seconds": 604800
+}
