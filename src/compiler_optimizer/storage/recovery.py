@@ -168,6 +168,15 @@ class RecoveryStorage:
             ).fetchone()
             return None if row is None else dict(row)
 
+    def recovery_jobs(self, task_id):
+        with self._transaction(write=False) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM recovery_jobs WHERE task_id=? ORDER BY rowid", (task_id,)
+                )
+            ]
+
     def recovery_attempts(self, task_id, proposal_id):
         with self._transaction(write=False) as db:
             return [

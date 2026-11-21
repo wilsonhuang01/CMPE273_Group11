@@ -193,6 +193,10 @@ def test_populated_schema_eight_upgrade_preserves_frozen_recovery(tmp_path):
         ):
             columns = ",".join(r[1] for r in db.execute(f"PRAGMA table_info({table})"))
             db.execute(f"INSERT INTO {table} SELECT {columns} FROM backup_{table}")
+        for table in ("cohort_work", "cohort_runs", "measurement_windows", "measurement_claims"):
+            db.execute(f"DROP TABLE {table}")
+        db.execute("ALTER TABLE fleet_jobs DROP COLUMN window_token")
+        db.execute("ALTER TABLE fleet_jobs DROP COLUMN reservation_mib")
         db.execute("PRAGMA user_version=8")
     reopened = Repository(repo.root)
     assert reopened.get_recovery_job(task, proposal.proposal_id) == before

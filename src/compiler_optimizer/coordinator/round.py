@@ -3,6 +3,8 @@
 import argparse
 import base64
 import json
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -20,6 +22,7 @@ from compiler_optimizer.coordinator.selection import SelectionCoordinator
 from compiler_optimizer.runtime.config import Settings
 from compiler_optimizer.runtime.proposal_queue import DeliveryError, RabbitProposalQueue
 from compiler_optimizer.scheduler.recovery import RecoveryController
+from compiler_optimizer.scheduler.resources import reservation_mib, runner_capacity
 from compiler_optimizer.shared.agent_roles import generation_role, role_spec
 from compiler_optimizer.shared.benchmarking import BenchmarkPlan
 from compiler_optimizer.shared.manifest import ContractError, require
@@ -55,7 +58,15 @@ class FrozenPatchBackend:
 
 class CohortCoordinator:
     def __init__(
-        self, repository, runner, broker, *, backends=None, review_backends=None, recovery=None
+        self,
+        repository,
+        runner,
+        broker,
+        *,
+        backends=None,
+        review_backends=None,
+        recovery=None,
+        concurrency=8,
     ):
         self.repository, self.runner, self.broker = repository, runner, broker
         self.backends, self.review_backends = dict(backends or {}), dict(review_backends or {})
@@ -66,6 +77,8 @@ class CohortCoordinator:
         require(set(self.review_backends) <= {"correctness", "critic"}, "unknown reviewer backend")
         self.last_task_id = None
         self.recovery = recovery
+        require(type(concurrency) is int and 1 <= concurrency <= 8, "concurrency must be 1–8")
+        self.concurrency = concurrency
 
     def optimize(
         self, package, *, agents=None, policy=None, verification_plan=None, benchmark_plan=None
@@ -179,9 +192,36 @@ class CohortCoordinator:
                 )
         cached = repository.selection_report(task_id)
         if cached is not None:
+            work = repository.cohort_work(task_id)
+            if work is not None:
+                for member in work["members"]:
+                    repository.checkpoint_cohort_member(task_id, member["proposal_id"], "completed")
+                repository.checkpoint_cohort(task_id, "completed")
             return cached[1]
         session = repository.get_selection_session(task_id)
+        manifest = repository.get_task(task_id)["submission"].manifest
+        self._reservation_mib = reservation_mib(manifest)
+        capacity = runner_capacity(self.runner)
+        count = capacity.workers(self._reservation_mib, self.concurrency) if capacity else 1
+        if self.recovery is not None:
+            count = min(count, len(self.recovery.workers))
+        work = repository.begin_cohort_work(task_id, count, self._reservation_mib)
+        count = min(count, work["workers"])
+        if self._cancellation_requested(task_id):
+            return self._finish_cancelled(task_id)
+        if work["workers"] > 1:
+            with ThreadPoolExecutor(max_workers=count, thread_name_prefix="cohort") as executor:
+                futures = [
+                    executor.submit(self._preflight_member, task_id, m) for m in session["members"]
+                ]
+                for future in futures:
+                    future.result()
+        if self._cancellation_requested(task_id):
+            return self._finish_cancelled(task_id)
+        repository.checkpoint_cohort(task_id, "measuring")
         for member in session["members"]:
+            if self._cancellation_requested(task_id):
+                return self._finish_cancelled(task_id)
             if repository.get_task(task_id)["status"] == "failed":
                 break
             progress = {p["proposal_id"]: p for p in repository.selection_progress(task_id)}
@@ -198,50 +238,122 @@ class CohortCoordinator:
                     )
                     self.broker.exchange(proposal, self.consume, lambda: None)
                 continue
-            request = next(
-                r
-                for r in repository.list_requests(task_id)
-                if r.proposal_id == member["proposal_id"]
+            proposal = self._generate_member(task_id, member)
+            if proposal is None:
+                continue
+            if self._cancellation_requested(task_id):
+                return self._finish_cancelled(task_id)
+            self.broker.exchange(proposal, self.consume, lambda: None)
+        if self.recovery is not None:
+            self.recovery.flush_outbox(task_id, self.broker)
+        if self._cancellation_requested(task_id):
+            return self._finish_cancelled(task_id)
+        try:
+            result = SelectionCoordinator(repository).choose(task_id)
+        except StateError:
+            if self._cancellation_requested(task_id):
+                return self._finish_cancelled(task_id)
+            raise
+        for member in session["members"]:
+            repository.checkpoint_cohort_member(task_id, member["proposal_id"], "completed")
+        repository.checkpoint_cohort(task_id, "completed")
+        return result
+
+    def _generate_member(self, task_id, member):
+        repository = self.repository
+        request = next(
+            r for r in repository.list_requests(task_id) if r.proposal_id == member["proposal_id"]
+        )
+        agent_type, starter = GENERATORS[request.role]
+        name = role_spec(request.role).name
+        backend = self.backends.get(name)
+        if member["backend_patch"] is not None:
+            backend = FrozenPatchBackend(
+                repository.artifacts, pb.ArtifactRef(**member["backend_patch"])
             )
-            agent_type, starter = GENERATORS[request.role]
-            name = role_spec(request.role).name
-            backend = self.backends.get(name)
-            if member["backend_patch"] is not None:
-                backend = FrozenPatchBackend(
-                    repository.artifacts, pb.ArtifactRef(**member["backend_patch"])
-                )
-            elif member["backend_kind"] == "custom":
-                require(backend is not None, "resume requires the original custom backend adapter")
-            backend = backend or starter()
-            try:
-                agent = agent_type(repository.artifacts, backend)
+        elif member["backend_kind"] == "custom":
+            require(backend is not None, "resume requires the original custom backend adapter")
+        backend = backend or starter()
+        try:
+            agent = agent_type(repository.artifacts, backend)
+            window = (
+                self.runner.work_window(memory_mib=self._reservation_mib)
+                if hasattr(self.runner, "work_window")
+                else nullcontext()
+            )
+            with window:
                 record = AgentJournal(repository, request.role).run(
                     task_id,
                     request.proposal_id,
                     {"assignment_base64": base64.b64encode(encode_message(request)).decode()},
                     lambda agent=agent, request=request: generate_record(agent, request),
                 )
-                proposal, patch_ref = unpack_generation(record, request)
-            except (ContractError, ValueError, StateError) as error:
-                evidence = {
-                    "task_id": task_id,
-                    "proposal_id": request.proposal_id,
-                    "reason": "generation_failed",
-                    "message": str(error)[:4096],
-                }
-                ref = repository.artifacts.put(json.dumps(evidence, sort_keys=True).encode())
-                repository.record_selection_progress(
-                    task_id, request.proposal_id, "generation_failed", ref
-                )
-                continue
-            repository.save_proposal(proposal)
-            repository.register_selection_patch(task_id, proposal.proposal_id, patch_ref)
-            self.broker.exchange(proposal, self.consume, lambda: None)
-        if self.recovery is not None:
-            self.recovery.flush_outbox(task_id, self.broker)
-        return SelectionCoordinator(repository).choose(task_id)
+            proposal, patch_ref = unpack_generation(record, request)
+        except (ContractError, ValueError, StateError) as error:
+            evidence = {
+                "task_id": task_id,
+                "proposal_id": request.proposal_id,
+                "reason": "generation_failed",
+                "message": str(error)[:4096],
+            }
+            ref = repository.artifacts.put(json.dumps(evidence, sort_keys=True).encode())
+            repository.record_selection_progress(
+                task_id, request.proposal_id, "generation_failed", ref
+            )
+            return None
+        repository.save_proposal(proposal)
+        repository.register_selection_patch(task_id, proposal.proposal_id, patch_ref)
+        return proposal
 
-    def consume(self, proposal):
+    def _preflight_member(self, task_id, member):
+        repository = self.repository
+        if self._cancellation_requested(task_id):
+            repository.checkpoint_cohort_member(task_id, member["proposal_id"], "cancelled")
+            return
+        if any(
+            p["proposal_id"] == member["proposal_id"]
+            for p in repository.selection_progress(task_id)
+        ):
+            return
+        work = repository.cohort_work(task_id)
+        state = next(
+            m["state"] for m in work["members"] if m["proposal_id"] == member["proposal_id"]
+        )
+        if state in ("ready", "completed", "cancelled"):
+            return
+        repository.checkpoint_cohort_member(task_id, member["proposal_id"], "preparing")
+        proposal = self._generate_member(task_id, member)
+        if proposal is not None and not self._cancellation_requested(task_id):
+            if self.recovery is not None:
+                from compiler_optimizer.workers.execution import wait_for_execution
+
+                wait_for_execution(
+                    lambda: self.consume(proposal, verification_only=True), self.recovery, task_id
+                )
+            else:
+                self.consume(proposal, verification_only=True)
+        repository.checkpoint_cohort_member(task_id, member["proposal_id"], "ready")
+
+    def _cancellation_requested(self, task_id):
+        run = self.repository.cohort_work(task_id)
+        return run is not None and run["state"] in ("cancelling", "cancelled")
+
+    def _finish_cancelled(self, task_id):
+        repository = self.repository
+        for member in repository.cohort_work(task_id)["members"]:
+            repository.checkpoint_cohort_member(task_id, member["proposal_id"], "cancelled")
+        task = repository.get_task(task_id)
+        if task["status"] == "running":
+            repository.transition(
+                task_id,
+                expected_revision=task["revision"],
+                status="failed",
+                reason="cohort_cancelled",
+            )
+        repository.checkpoint_cohort(task_id, "cancelled")
+        return {"task_id": task_id, "status": "cancelled", "reason": "cohort_cancelled"}
+
+    def consume(self, proposal, *, verification_only=False):
         repository = self.repository
         task_id = proposal.meta.task_id
         member = next(
@@ -295,6 +407,7 @@ class CohortCoordinator:
                 review_backends=self.review_backends,
                 configuration=config,
                 recovery=self.recovery,
+                verification_only=verification_only,
             )
         except RecoveryTerminal as error:
             evidence = {
@@ -320,6 +433,10 @@ class CohortCoordinator:
                 task_id, proposal.proposal_id, "assessment_failed", ref
             )
             return evidence
+        if self._cancellation_requested(task_id):
+            return {"task_id": task_id, "proposal_id": proposal.proposal_id, "status": "cancelled"}
+        if verification_only:
+            return {"task_id": task_id, "proposal_id": proposal.proposal_id, "status": "ready"}
         evidence = {
             "schema_version": 1,
             "task_id": task_id,
@@ -361,7 +478,12 @@ def main():
     parser.add_argument("--image")
     parser.add_argument("--target", choices=tuple(DEFAULT_IMAGES), default="linux-x86_64")
     parser.add_argument("--recovery-policy")
-    parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument(
+        "--workers", type=int, default=8, help="Upper bound; capacity preserves headroom"
+    )
+    parser.add_argument(
+        "--cancel", action="store_true", help="Cancel --task-id after active work drains"
+    )
     args = parser.parse_args()
     coordinator = None
     try:
@@ -371,6 +493,11 @@ def main():
             require(name not in backends, "duplicate role patch")
             backends[name] = FilePatchBackend(path)
         repository = Repository(args.state)
+        if args.cancel:
+            require(args.task_id is not None, "--cancel requires --task-id")
+            repository.cancel_cohort(args.task_id)
+            print(json.dumps({"task_id": args.task_id, "status": "cancellation_requested"}))
+            return 0
         coordinator = CohortCoordinator(
             repository,
             DockerRunner(

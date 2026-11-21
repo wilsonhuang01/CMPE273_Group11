@@ -260,19 +260,20 @@ def test_failure_persisted_and_invalidity_enforced(verified, role):
         assert run_benchmark(repo, task, result.job_id, runner)["analysis"]["qualified"]
 
 
-def test_latest_retained_benchmark_blocks_earlier_gain(verified):
+def test_completed_measurement_cannot_be_rerun_with_another_policy(verified):
     repo, runner, task, result = verified
     assert run_benchmark(repo, task, result.job_id, runner)["analysis"]["qualified"]
-    report = run_benchmark(
-        repo,
-        task,
-        result.job_id,
-        runner,
-        replace(BenchmarkPlan(), minimum_relative_improvement=0.3),
-    )
-    assert not report["analysis"]["qualified"]
-    with pytest.raises(StateError, match="reliable benchmark"):
-        repo.select_result(task, result.job_id, 1, expected_revision=1, reason="Old gain")
+    before = list(runner.events)
+    with pytest.raises(StateError, match="cannot resample"):
+        run_benchmark(
+            repo,
+            task,
+            result.job_id,
+            runner,
+            replace(BenchmarkPlan(), minimum_relative_improvement=0.3),
+        )
+    assert runner.events == before
+    assert len(repo.list_benchmarks(task)) == 1
 
 
 def test_forged_summary_and_binary_binding_rejected(verified):
@@ -309,6 +310,6 @@ def test_schema_one_migrates_without_losing_data(tmp_path):
     Repository(root)
     Repository(root)
     with sqlite3.connect(root / "state.sqlite3") as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 10
         assert db.execute("SELECT revision FROM tasks WHERE task_id='old'").fetchone()[0] == 7
         assert db.execute("SELECT COUNT(*) FROM benchmark_runs").fetchone()[0] == 0

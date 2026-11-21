@@ -94,6 +94,8 @@ class FleetStorage:
             ).fetchone()
             if parent is None:
                 raise StateError("parent execution lease expired or fenced")
+        if row["window_token"] and not self._fleet_window_allows(db, row):
+            raise StateError("measurement window expired or fenced")
         return row
 
     def fleet_profiles(self, *, fresh=True):
@@ -108,16 +110,32 @@ class FleetStorage:
     def enqueue_fleet_job(self, task_id, worker, payload, refs, parent_token=None):
         operation = payload["operation"]
         require(operation in {"compile", "execute", "environment"}, "unsupported worker operation")
+        memory_mib = payload.get("reservation_mib", 128)
+        require(type(memory_mib) is int and 1 <= memory_mib <= 65536, "invalid memory reservation")
+        window_token = payload.get("window_token")
         job_id = str(uuid4())
         input_ref = self.artifacts.put(canonical(payload))
         with self._transaction() as db:
             self._task(db, task_id, running=True)
             for ref in [input_ref, *refs]:
                 self._artifact(db, task_id, ref, "worker-input", owner="fleet")
+            if window_token:
+                window = db.execute(
+                    "SELECT * FROM measurement_windows WHERE token=?", (window_token,)
+                ).fetchone()
+                require(
+                    window is not None
+                    and window["state"] == "active"
+                    and window["engine_id"] == worker["engine_id"]
+                    and window["task_id"] == task_id
+                    and window["parent_token"] == parent_token,
+                    "invalid measurement authority",
+                )
             db.execute(
                 "INSERT INTO "
                 "fleet_jobs(job_id,task_id,worker_id,incarnation_id,engine_id,parent_token,"
-                "input_key,operation,token,deadline_ms) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "input_key,operation,token,deadline_ms,window_token,reservation_mib) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     job_id,
                     task_id,
@@ -129,6 +147,8 @@ class FleetStorage:
                     operation,
                     uuid4().hex,
                     self.fleet_now() + payload["timeout_seconds"] * 1000,
+                    window_token,
+                    memory_mib,
                 ),
             )
         return job_id
@@ -157,6 +177,7 @@ class FleetStorage:
                 "WHERE state='pending' AND deadline_ms<=?",
                 (now,),
             )
+            self._drain_measurement_windows(db)
             for row in db.execute(
                 "SELECT * FROM fleet_jobs WHERE state='pending' ORDER BY rowid LIMIT 32"
             ).fetchall():
@@ -165,7 +186,12 @@ class FleetStorage:
                     "last_seen_ms>=?",
                     (row["worker_id"], row["incarnation_id"], now - FRESH_MS),
                 ).fetchone()
-                if worker is None or worker["active_job"] is not None:
+                if (
+                    worker is None
+                    or worker["active_job"] is not None
+                    or not self._fleet_window_allows(db, row)
+                    or not self._engine_resources_allow(db, row)
+                ):
                     continue
                 db.execute(
                     "UPDATE fleet_jobs SET state='assigned',expires_ms=? WHERE job_id=?",
@@ -320,6 +346,11 @@ class FleetStorage:
 
     def cancel_fleet_task(self, task_id):
         with self._transaction() as db:
+            db.execute(
+                "UPDATE measurement_windows SET state='draining' WHERE task_id=? "
+                "AND state!='released'",
+                (task_id,),
+            )
             db.execute(
                 "UPDATE fleet_jobs SET state='failed',error='coordinator_restart' "
                 "WHERE task_id=? AND state='pending'",

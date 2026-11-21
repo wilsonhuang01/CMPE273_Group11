@@ -146,11 +146,18 @@ python -m compiler_optimizer.coordinator.round \
 
 The original program is retained when no candidate shows a reliable weighted gain.
 
+## Concurrent preparation
+
+Cohorts use Docker CPU/memory capacity with explicit headroom to bound concurrent
+generation and verification. Benchmarks hold exclusive engine measurement windows;
+completed or noisy runs cannot be resampled. See [concurrency and cancellation](docs/concurrency.md)
+for capacity limits, durable checkpoints and cancellation commands.
+
 ## Fault recovery
 
 Fault recovery provides [leased execution, healthy-worker retries and scoped Redis quarantine](docs/fault-recovery.md).
 The cohort, legacy pipeline and standalone verification/benchmark CLIs enable
-recovery by default with two local sandbox workers. RabbitMQ
+recovery by default with capacity-bounded local sandbox workers. RabbitMQ
 uses manual acknowledgements, confirmed delayed retries and dead letters; stale
 workers cannot commit results. Two matching crashes on separate healthy workers
 quarantine only the exact transformation, source and execution context. Automated

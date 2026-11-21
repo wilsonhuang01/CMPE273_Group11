@@ -120,10 +120,19 @@ class WorkerExecutor:
 
                 if value["operation"] == "compile":
                     package = package_from_files(unbundle(fetch("package")))
+                    require(
+                        value.get("reservation_mib", 0)
+                        >= package.manifest.limits.compile_memory_mib,
+                        "compile exceeds assigned memory reservation",
+                    )
                     invocation = self.runner.compile(package, build_profile=value["build_profile"])
                     result = encode_invocation(invocation)
                 elif value["operation"] == "execute":
                     manifest = parse_manifest(value["manifest"])
+                    require(
+                        value.get("reservation_mib", 0) >= manifest.limits.run_memory_mib,
+                        "execution exceeds assigned memory reservation",
+                    )
                     case = ParseDict(value["case"], pb.TestCase())
                     validate_path(case.stdin)
                     require(

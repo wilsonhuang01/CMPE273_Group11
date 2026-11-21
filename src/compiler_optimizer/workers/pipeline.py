@@ -1,6 +1,7 @@
 """Resume automated verification, required reviews, and organized measurements."""
 
 import json
+from contextlib import nullcontext
 
 from compiler_optimizer.agents.benchmark import BenchmarkAgent
 from compiler_optimizer.agents.correctness import CorrectnessAgent
@@ -22,6 +23,7 @@ def evaluate_proposal(
     review_backends=None,
     configuration=None,
     recovery=None,
+    verification_only=False,
 ):
     run = repository.get_pipeline(task_id)
     if configuration is None:
@@ -54,9 +56,20 @@ def evaluate_proposal(
                 review_backends,
                 recovery_attempt=True,
                 force_verification=force,
+                verification_only=verification_only,
             ),
+            scope="preparation" if verification_only else "evaluate",
         )
-    return _evaluate_stages(repository, task_id, proposal_id, runner, run, config, review_backends)
+    return _evaluate_stages(
+        repository,
+        task_id,
+        proposal_id,
+        runner,
+        run,
+        config,
+        review_backends,
+        verification_only=verification_only,
+    )
 
 
 def _evaluate_stages(
@@ -70,6 +83,7 @@ def _evaluate_stages(
     *,
     recovery_attempt=False,
     force_verification=False,
+    verification_only=False,
 ):
     from compiler_optimizer.shared.recovery import infrastructure_failure
     from compiler_optimizer.workers.recovery_evidence import check_benchmark, check_verification
@@ -129,9 +143,16 @@ def _evaluate_stages(
     for role in config.get("required_reviews", []):
         reviewers = {"correctness": CorrectnessAgent, "critic": CriticAgent}
         require(role in reviewers, "required reviewer is not implemented")
-        reviews[role] = reviewers[role](repository, (review_backends or {}).get(role)).review(
-            proposal, verified
+        window = (
+            runner.work_window(memory_mib=256) if hasattr(runner, "work_window") else nullcontext()
         )
+        with window:
+            reviews[role] = reviewers[role](repository, (review_backends or {}).get(role)).review(
+                proposal, verified
+            )
+    cohort = repository.cohort_work(task_id)
+    if verification_only or (cohort is not None and cohort["state"] in ("cancelling", "cancelled")):
+        return verified, None, reviews, None
     if verified.WhichOneof("outcome") == "success" and all(
         review["verdict"] == "approve" for review in reviews.values()
     ):

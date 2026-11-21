@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
 
@@ -36,6 +37,12 @@ def _ref(ref):
 
 
 def run_benchmark(repository, task_id, job_id, runner, plan=None, *, attempt=1):
+    window = runner.measurement_window() if hasattr(runner, "measurement_window") else nullcontext()
+    with window:
+        return _run_benchmark(repository, task_id, job_id, runner, plan, attempt=attempt)
+
+
+def _run_benchmark(repository, task_id, job_id, runner, plan=None, *, attempt=1):
     plan = BenchmarkPlan() if plan is None else plan
     plan_ref = repository.artifacts.put(plan.encode())
     job, result, correctness = repository.get_verified_candidate(task_id, job_id, attempt)
@@ -44,6 +51,7 @@ def run_benchmark(repository, task_id, job_id, runner, plan=None, *, attempt=1):
         "emulated RISC-V is correctness-only and cannot qualify performance",
     )
     repository.measurement_work(task_id, job_id, attempt, plan_ref)
+    repository.begin_measurement(task_id, job_id, attempt, plan_ref)
     _, original, _ = _snapshot(repository, task_id)
     require(
         runner.compiler(original.manifest.language) == job.compiler,

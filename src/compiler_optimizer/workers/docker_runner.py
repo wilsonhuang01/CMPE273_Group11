@@ -6,6 +6,7 @@ import math
 import re
 import subprocess
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -110,27 +111,6 @@ class DockerRunner:
             self.image = info["Id"]  # Pin subsequent invocations to immutable content, not a tag.
             if not re.fullmatch(r"sha256:[0-9a-f]{64}", self.image):
                 raise InfrastructureError("toolchain image is not content-addressed")
-            version = self._command(
-                [
-                    "run",
-                    "--rm",
-                    "--platform",
-                    self.platform,
-                    "--network",
-                    "none",
-                    "--read-only",
-                    "--log-driver",
-                    "none",
-                    "--entrypoint",
-                    "/usr/bin/clang-18",
-                    self.image,
-                    "--version",
-                ]
-            )
-            matched = re.search(rb"clang version (18\.\d+\.\d+)", version.stdout)
-            if matched is None:
-                raise InfrastructureError("toolchain must provide Clang 18")
-            self.version = matched.group(1).decode()
             engine = self._command(
                 [
                     "info",
@@ -154,6 +134,33 @@ class DockerRunner:
                 option.startswith("name=seccomp") for option in engine_info["security"]
             ):
                 raise InfrastructureError("sandbox requires cgroup v2 and Docker seccomp support")
+            from compiler_optimizer.scheduler.resources import Capacity, engine_window
+
+            self._admission_engine = (
+                self._command(["info", "--format", "{{.ID}}"]).stdout.decode().strip()
+            )
+            with engine_window(self._admission_engine, Capacity.parse(engine_info)):
+                version = self._command(
+                    [
+                        "run",
+                        "--rm",
+                        "--platform",
+                        self.platform,
+                        "--network",
+                        "none",
+                        "--read-only",
+                        "--log-driver",
+                        "none",
+                        "--entrypoint",
+                        "/usr/bin/clang-18",
+                        self.image,
+                        "--version",
+                    ]
+                )
+                matched = re.search(rb"clang version (18\.\d+\.\d+)", version.stdout)
+                if matched is None:
+                    raise InfrastructureError("toolchain must provide Clang 18")
+                self.version = matched.group(1).decode()
             self.hardware = json.dumps(
                 {
                     "target": self.target,
@@ -172,25 +179,26 @@ class DockerRunner:
             )
             self.emulator_version = None
             if self.target == "linux-riscv64":
-                self.emulator_version = (
-                    self._command(
-                        [
-                            "run",
-                            "--rm",
-                            "--platform",
-                            self.platform,
-                            "--network",
-                            "none",
-                            "--read-only",
-                            "--entrypoint",
-                            "/usr/bin/qemu-riscv64",
-                            self.image,
-                            "--version",
-                        ]
+                with self.work_window():
+                    self.emulator_version = (
+                        self._command(
+                            [
+                                "run",
+                                "--rm",
+                                "--platform",
+                                self.platform,
+                                "--network",
+                                "none",
+                                "--read-only",
+                                "--entrypoint",
+                                "/usr/bin/qemu-riscv64",
+                                self.image,
+                                "--version",
+                            ]
+                        )
+                        .stdout.decode()
+                        .splitlines()[0][:256]
                     )
-                    .stdout.decode()
-                    .splitlines()[0][:256]
-                )
                 hardware = json.loads(self.hardware)
                 hardware["emulator_version"] = self.emulator_version
                 self.hardware = json.dumps(hardware)
@@ -291,6 +299,10 @@ class DockerRunner:
         return data
 
     def check_health(self):
+        with self.work_window():
+            return self._check_health()
+
+    def _check_health(self):
         info = json.loads(
             self._command(
                 [
@@ -416,7 +428,42 @@ class DockerRunner:
             g.process is not None and g.status()["state"] == "removed" for g in guards
         )
 
+    @contextmanager
+    def work_window(self, *, memory_mib=128, exclusive=False):
+        from compiler_optimizer.scheduler.resources import Capacity, engine_window
+
+        if not hasattr(self, "_admission_engine"):
+            self._admission_engine = (
+                self._command(["info", "--format", "{{.ID}}"]).stdout.decode().strip()
+            )
+        capacity = Capacity.parse(self.hardware)
+        with engine_window(
+            self._admission_engine, capacity, memory_mib=memory_mib, exclusive=exclusive
+        ):
+            if exclusive:
+                remaining = self._command(
+                    ["ps", "--all", "--quiet", "--filter", "label=compiler-optimizer.watchdog"]
+                ).stdout.strip()
+                if remaining:
+                    raise InfrastructureError("measurement blocked by unconfirmed sandbox cleanup")
+            yield
+
+    def measurement_window(self):
+        from compiler_optimizer.scheduler.resources import Capacity
+
+        return self.work_window(exclusive=True, memory_mib=Capacity.parse(self.hardware).memory_mib)
+
     def _invoke(self, payload, *, memory, compile_mode, cpu_id=None, trusted_command=None):
+        with self.work_window(memory_mib=memory):
+            return self._invoke_reserved(
+                payload,
+                memory=memory,
+                compile_mode=compile_mode,
+                cpu_id=cpu_id,
+                trusted_command=trusted_command,
+            )
+
+    def _invoke_reserved(self, payload, *, memory, compile_mode, cpu_id=None, trusted_command=None):
         lease = EXECUTION_LEASE.get()
         lease_token = None if lease is None else lease["lease_token"]
         if lease_token is not None and lease_token in self._recovery_cancelled:

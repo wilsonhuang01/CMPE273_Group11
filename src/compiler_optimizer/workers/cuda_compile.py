@@ -25,21 +25,22 @@ class CUDACompileRunner(DockerRunner):
             != "13.0-ptx-v1"
         ):
             raise InfrastructureError("image does not provide the controlled offline CUDA compiler")
-        version = self._command(
-            [
-                "run",
-                "--rm",
-                "--platform",
-                self.platform,
-                "--network",
-                "none",
-                "--read-only",
-                "--entrypoint",
-                "/usr/local/cuda-13.0/bin/nvcc",
-                self.image,
-                "--version",
-            ]
-        ).stdout
+        with self.work_window():
+            version = self._command(
+                [
+                    "run",
+                    "--rm",
+                    "--platform",
+                    self.platform,
+                    "--network",
+                    "none",
+                    "--read-only",
+                    "--entrypoint",
+                    "/usr/local/cuda-13.0/bin/nvcc",
+                    self.image,
+                    "--version",
+                ]
+            ).stdout
         matched = re.search(rb"V(13\.0\.\d+)", version)
         if matched is None:
             raise InfrastructureError("offline compiler requires NVCC 13.0")

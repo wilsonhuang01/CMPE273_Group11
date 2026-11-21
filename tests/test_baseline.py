@@ -208,6 +208,8 @@ def test_infrastructure_failure_is_persisted_distinctly(submission_dir, tmp_path
 def test_docker_adapter_bounds_resources_and_cleans_up(monkeypatch, tmp_path):
     calls = []
     runner = object.__new__(DockerRunner)
+    runner.hardware = json.dumps({"docker_engine": {"cpus": 4, "memory_bytes": 4 * 1024**3}})
+    runner._admission_engine = str(tmp_path)
     runner.image = "sha256:" + "a" * 64
     runner.target, runner.platform = "linux-x86_64", "linux/amd64"
     runner.measurement_version = 1
@@ -263,6 +265,8 @@ def test_docker_adapter_bounds_resources_and_cleans_up(monkeypatch, tmp_path):
 def test_invalid_supervisor_reply_still_removes_container(monkeypatch, reply, tmp_path):
     calls = []
     runner = object.__new__(DockerRunner)
+    runner.hardware = json.dumps({"docker_engine": {"cpus": 4, "memory_bytes": 4 * 1024**3}})
+    runner._admission_engine = str(tmp_path)
     runner.image = "sha256:" + "a" * 64
     runner.target, runner.platform = "linux-x86_64", "linux/amd64"
     runner.measurement_version = 1
@@ -286,6 +290,8 @@ def test_invalid_supervisor_reply_still_removes_container(monkeypatch, reply, tm
 
 def test_success_is_rejected_when_watchdog_cannot_confirm_cleanup(monkeypatch, tmp_path):
     runner = object.__new__(DockerRunner)
+    runner.hardware = json.dumps({"docker_engine": {"cpus": 4, "memory_bytes": 4 * 1024**3}})
+    runner._admission_engine = str(tmp_path)
     runner.image = "sha256:" + "a" * 64
     runner.target, runner.platform = "linux-x86_64", "linux/amd64"
     runner.measurement_version = 1

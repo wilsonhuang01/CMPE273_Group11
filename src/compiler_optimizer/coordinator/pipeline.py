@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
 
@@ -149,12 +150,18 @@ class PipelineCoordinator:
                 pb.ARCHITECTURE: (ArchitectureAgent, ExampleArchitectureBackend),
             }[role]
             generator = agent_type(repository.artifacts, backend or default_backend())
-            record = AgentJournal(repository, role).run(
-                task_id,
-                request.proposal_id,
-                {"assignment_base64": base64.b64encode(encode_message(request)).decode()},
-                lambda: generate_record(generator, request),
+            window = (
+                self.runner.work_window(memory_mib=256)
+                if hasattr(self.runner, "work_window")
+                else nullcontext()
             )
+            with window:
+                record = AgentJournal(repository, role).run(
+                    task_id,
+                    request.proposal_id,
+                    {"assignment_base64": base64.b64encode(encode_message(request)).decode()},
+                    lambda: generate_record(generator, request),
+                )
             proposal, patch_ref = unpack_generation(record, request)
             repository.enqueue_pipeline(
                 proposal,

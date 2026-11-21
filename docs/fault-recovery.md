@@ -27,12 +27,14 @@ python -m compiler_optimizer.coordinator.round \
   --task-id TASK_ID --state var/recovery
 ```
 
-The CLI enables recovery by default with two local logical workers, separate
-identities and DockerRunner instances. Both use the same pinned compiler image and
-sandbox policy. `--workers` accepts 1–8; at least two available, context-compatible
-workers are needed to confirm a crash independently. Work runs sequentially per
-cohort; this is a host-managed sandbox pool, not remote worker dispatch. Compose's
-application worker still does not receive the Docker socket or execute submissions.
+The CLI enables recovery by default with separate logical worker identities and
+DockerRunner instances. All use the pinned compiler image and sandbox policy.
+`--workers` accepts an upper bound of 1–8; active concurrency is chosen from Docker
+CPU/memory capacity with explicit headroom. At least two available,
+context-compatible workers are needed to confirm a crash independently.
+[Concurrent preparation and exclusive measurement windows](concurrency.md) keep
+compilation and agent work out of benchmarks. These local logical workers are a
+host-managed sandbox pool; the remote backend uses independent fleet executors.
 The SDK opts in with `CohortCoordinator(..., recovery=RecoveryController(...))`
 or `PipelineCoordinator(..., recovery=RecoveryController(...))`.
 
@@ -64,7 +66,8 @@ unfenced writes once a proposal has managed recovery state.
 Database schema 9 adds operation scopes while retaining existing job IDs, frozen
 policy/context artifacts, attempt counts, outcomes and outbox events. Existing
 pipeline checkpoints retain their stored verification, benchmark and selection
-policies. A terminal legacy candidate produces an evidence-checked recovery report
+policies. Schema 10 adds concurrency checkpoints and one-shot measurement claims;
+see the [concurrency guide](concurrency.md). A terminal legacy candidate produces an evidence-checked recovery report
 and retains the baseline through the existing selection gates.
 
 ## Delivery and retry rules

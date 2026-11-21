@@ -2,11 +2,12 @@
 
 import json
 import time
+from contextlib import contextmanager
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from compiler_optimizer.shared.fleet import decode_result, validate_profile
-from compiler_optimizer.shared.lease_context import EXECUTION_LEASE
+from compiler_optimizer.shared.lease_context import EXECUTION_LEASE, MEASUREMENT_WINDOW
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.workers.docker_runner import InfrastructureError
 from compiler_optimizer.workers.package import bundle
@@ -84,6 +85,7 @@ class RemoteRunner:
         payload["compiler"] = MessageToDict(
             self.compiler(payload.pop("language", "c17")), preserving_proto_field_name=True
         )
+        payload["window_token"] = MEASUREMENT_WINDOW.get()
         parent = EXECUTION_LEASE.get()
         job = self.repository.enqueue_fleet_job(
             self.task_id,
@@ -109,6 +111,30 @@ class RemoteRunner:
         self.repository.cancel_fleet_job(job)
         raise InfrastructureError("remote work or sandbox cleanup did not complete before deadline")
 
+    @contextmanager
+    def measurement_window(self):
+        parent = EXECUTION_LEASE.get()
+        token = self.repository.request_measurement_window(
+            self.task_id,
+            self.worker["engine_id"],
+            None if parent is None else parent["lease_token"],
+        )
+        context_token = None
+        try:
+            deadline = time.monotonic() + 60
+            while not self.repository.enter_measurement_window(token):
+                if parent is not None:
+                    parent["assert_live"]()
+                if time.monotonic() >= deadline:
+                    raise InfrastructureError("remote measurement admission deadline")
+                time.sleep(0.05)
+            context_token = MEASUREMENT_WINDOW.set(token)
+            yield
+        finally:
+            if context_token is not None:
+                MEASUREMENT_WINDOW.reset(context_token)
+            self.repository.release_measurement_window(token)
+
     def compile(self, package, *, build_profile="normal"):
         ref = self.repository.artifacts.put(bundle(package.files))
         return self._call(
@@ -118,6 +144,7 @@ class RemoteRunner:
                 "language": package.manifest.language,
                 "build_profile": build_profile,
                 "timeout_seconds": package.manifest.limits.compile_wall_seconds + 60,
+                "reservation_mib": package.manifest.limits.compile_memory_mib,
                 "output_bytes": package.manifest.limits.output_kib * 1024,
             },
             [ref],
@@ -141,6 +168,7 @@ class RemoteRunner:
                 "build_profile": build_profile,
                 "cpu_id": cpu_id,
                 "timeout_seconds": package.manifest.limits.run_wall_seconds + 60,
+                "reservation_mib": package.manifest.limits.run_memory_mib,
                 "output_bytes": package.manifest.limits.output_kib * 1024,
             },
             [bref, iref],

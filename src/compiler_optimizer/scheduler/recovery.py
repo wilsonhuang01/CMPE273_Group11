@@ -85,14 +85,30 @@ class RecoveryController:
         require(1 <= len(workers) <= 8, "recovery needs 1–8 workers")
         self.repository, self.workers, self.blacklist = repository, list(workers), blacklist
         require(len({w.worker_id for w in workers}) == len(workers), "duplicate worker identity")
+        self._dispatch_lock = threading.Lock()
         self.policy = policy or RecoveryPolicy()
         self.policy.encode()
         self.explicit_policy = policy is not None
 
     @classmethod
     def local(
-        cls, repository, runner, settings, *, policy=None, worker_count=2, watchdog_directory=None
+        cls,
+        repository,
+        runner,
+        settings,
+        *,
+        policy=None,
+        worker_count=None,
+        watchdog_directory=None,
     ):
+        if worker_count is None:
+            from compiler_optimizer.scheduler.resources import runner_capacity
+
+            capacity = runner_capacity(runner)
+            worker_count = min(8, capacity.cpus) if capacity else 2
+        require(
+            type(worker_count) is int and 1 <= worker_count <= 8, "worker pool size must be 1–8"
+        )
         workers = [Worker(runner=runner)]
         workers.extend(
             Worker(
@@ -204,6 +220,8 @@ class RecoveryController:
             self.workers,
             key=lambda w: (w.worker_id in used, used.count(w.worker_id), self.workers.index(w)),
         )
+        if any(r["cleanup_token"] for r in repository.recovery_jobs(job["task_id"])):
+            return None, None
         for worker in candidates:
             if worker.retired:
                 continue
@@ -211,7 +229,10 @@ class RecoveryController:
                 (w for w in repository.recovery_workers() if w["worker_id"] == worker.worker_id),
                 None,
             )
-            if known is not None and known["quarantine_until_ms"] > repository.recovery_now():
+            if known is not None and (
+                known["current_job_id"] is not None
+                or known["quarantine_until_ms"] > repository.recovery_now()
+            ):
                 continue
             if job["mode"] == "confirm" and job["crash_json"]:
                 first = json.loads(job["crash_json"])
@@ -248,6 +269,29 @@ class RecoveryController:
                 except StorageError:
                     pass
         return None, None
+
+    def _reap_task(self, task_id):
+        # Concurrent proposals must not wait forever behind another proposal's
+        # expired worker, or reuse its capacity before sandbox cleanup completes.
+        repository = self.repository
+        for prior in repository.recovery_jobs(task_id):
+            token = RECOVERY_SCOPE.set(prior["scope"])
+            try:
+                repository.expire_recovery_lease(task_id, prior["proposal_id"])
+                row = repository.get_recovery_job(task_id, prior["proposal_id"])
+                if row["cleanup_token"]:
+                    with repository._transaction(write=False) as db:
+                        policy = repository._recovery_policy(db, row)
+                    if any(
+                        self._cancel(w, row["cleanup_token"], policy)
+                        for w in self.workers
+                        if w.runner is not None
+                    ):
+                        repository.confirm_recovery_cleanup(
+                            task_id, row["proposal_id"], row["cleanup_token"]
+                        )
+            finally:
+                RECOVERY_SCOPE.reset(token)
 
     def _heartbeat(self, stop, lost, lease, worker, policy):
         while not stop.wait(policy.heartbeat_seconds):
@@ -338,13 +382,27 @@ class RecoveryController:
         ):
             ready = min(rows[w.worker_id]["quarantine_until_ms"] for w in candidates)
             raise RetryDelivery(ready - repository.recovery_now(), job["job_id"])
-        worker, context = self._pick(job, proposal, policy)
+        with self._dispatch_lock:
+            self._reap_task(job["task_id"])
+            worker, context = self._pick(job, proposal, policy)
+            if worker is None:
+                ids = {w.worker_id for w in self.workers if not w.retired}
+                if any(
+                    w["worker_id"] in ids and w["current_job_id"] is not None
+                    for w in repository.recovery_workers()
+                ):
+                    raise RetryDelivery(50, job["job_id"])
+                repository.defer_unavailable_worker(job["task_id"], job["proposal_id"])
+            else:
+                lease = repository.claim_recovery_job(
+                    job["task_id"],
+                    job["proposal_id"],
+                    worker.worker_id,
+                    worker.incarnation_id,
+                    context,
+                )
         if worker is None:
-            repository.defer_unavailable_worker(job["task_id"], job["proposal_id"])
             return self._evaluate(proposal, config, action)
-        lease = repository.claim_recovery_job(
-            job["task_id"], job["proposal_id"], worker.worker_id, worker.incarnation_id, context
-        )
         emit(
             "attempt_started",
             task_id=job["task_id"],
