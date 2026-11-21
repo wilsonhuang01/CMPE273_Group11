@@ -633,7 +633,29 @@ class DockerRunner:
                 invocation.cpu_seconds = cpu
                 return invocation
             except (ValueError, KeyError, TypeError) as error:
-                raise InfrastructureError("invalid supervisor response") from error
+                diagnostic = guard.directory / "protocol-error.json"
+                diagnostic.write_text(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "error_type": type(error).__name__,
+                            "error": str(error)[:512],
+                            "target": self.target,
+                            "mode": payload.get("mode", "probe"),
+                            "build_profile": payload.get("build_profile", "normal"),
+                            "docker_returncode": completed.returncode,
+                            "stdout_base64": base64.b64encode(completed.stdout).decode(),
+                            "stderr_base64": base64.b64encode(completed.stderr).decode(),
+                        },
+                        sort_keys=True,
+                    )
+                )
+                raise InfrastructureError(
+                    f"invalid supervisor response ({type(error).__name__}; "
+                    f"docker exit {completed.returncode}; "
+                    f"stdout {len(completed.stdout)} bytes; stderr {len(completed.stderr)} bytes); "
+                    f"inspect {diagnostic}"
+                ) from error
         finally:
             if created:
                 try:

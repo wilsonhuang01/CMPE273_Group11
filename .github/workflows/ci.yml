@@ -91,7 +91,15 @@ jobs:
           RISCV_DOCKER_TESTS: "1"
           CUDA_COMPILE_TESTS: "1"
           EVALUATION_DOCKER_TESTS: "1"
-        run: python -m pytest tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_dispatch_docker.py tests/test_transfer_docker.py tests/test_fleet_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py
+        run: python -m pytest --basetemp="${RUNNER_TEMP}/compiler-optimizer-tests" tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_dispatch_docker.py tests/test_transfer_docker.py tests/test_fleet_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py
+      - name: Preserve malformed sandbox protocol evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-protocol-diagnostics
+          path: ${{ runner.temp }}/compiler-optimizer-tests/**/protocol-error.json
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Write persistent artifact
         run: |
           docker compose exec -T coordinator python -c 'from compiler_optimizer.storage import Repository; Repository("/var/lib/compiler-optimizer").artifacts.put(b"compose-persistence-check")'

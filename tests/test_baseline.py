@@ -273,9 +273,15 @@ def test_invalid_supervisor_reply_still_removes_container(monkeypatch, reply, tm
 
     monkeypatch.setattr(runner, "_command", command)
     mock_guard(monkeypatch, runner, command, tmp_path)
-    with pytest.raises(InfrastructureError, match="response"):
+    with pytest.raises(InfrastructureError, match="response") as caught:
         runner._invoke({"wall_seconds": 2, "output_bytes": 1024}, memory=256, compile_mode=False)
     assert calls[-1][:2] == ["rm", "--force"]
+    diagnostic = json.loads((tmp_path / "protocol-error.json").read_text())
+    assert base64.b64decode(diagnostic["stdout_base64"]) == reply
+    assert diagnostic["docker_returncode"] == 0
+    assert diagnostic["error_type"] == type(caught.value.__cause__).__name__
+    assert diagnostic["error_type"] in str(caught.value)
+    assert reply.decode() not in str(caught.value)
 
 
 def test_success_is_rejected_when_watchdog_cannot_confirm_cleanup(monkeypatch, tmp_path):

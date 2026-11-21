@@ -87,6 +87,12 @@ The host's Docker attachment reader independently caps protocol stdout/stderr at
 32 MiB, large enough for the bounded executable plus diagnostic envelope. It checks
 watchdog status while streaming. If the watchdog exits unexpectedly, the parent
 rejects the invocation and attempts container removal itself.
+Malformed supervisor responses remain infrastructure failures. The watchdog
+directory retains a bounded `protocol-error.json` with the parser/validation
+error, invocation target/profile, Docker exit code and base64 protocol streams.
+Failure messages include the error class and byte counts without embedding raw
+program output. CI preserves these diagnostic files as the
+`sandbox-protocol-diagnostics` artifact when an integration job fails.
 
 Normal completion also requires watchdog confirmation that the container was
 removed. A nonzero cleanup command or an unavailable daemon is not treated as
