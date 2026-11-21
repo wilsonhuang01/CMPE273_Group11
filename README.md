@@ -29,6 +29,9 @@ submission examples, status, retry limits and the distinction from Compose intak
 
 ## Initial implementation scope
 
+The [implementation backlog](backlog/index.html) lists remaining actions,
+dependencies and completion criteria in a browser-readable document.
+
 The first milestone targets deterministic C17/C++17 command-line programs on
 Linux x86-64 CPUs. CUDA, RISC-V, and MLIR transformations follow after the CPU
 pipeline works. The architecture below describes the full planned system.

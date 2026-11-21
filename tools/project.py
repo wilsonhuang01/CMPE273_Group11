@@ -82,6 +82,7 @@ def package(destination, evidence):
         "src",
         "docker",
         "docs",
+        "backlog",
         "examples",
         "benchmarks",
         "monitoring",
