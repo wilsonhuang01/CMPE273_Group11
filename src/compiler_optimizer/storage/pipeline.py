@@ -301,55 +301,92 @@ class PipelineStorage:
                 if value.WhichOneof("subject") == "proposal_id"
                 and value.proposal_id == proposal.proposal_id
             ]
-            require(bool(candidates), "pipeline needs a verification result")
-            verified = candidates[-1]
-            passed = verified.WhichOneof("outcome") == "success"
-            require(
-                report.get("verification_job_id") == verified.job_id
-                and report.get("verification") == ("passed" if passed else "rejected")
-                and report.get("correctness_report") == reference(verified.correctness_report),
-                "pipeline correctness evidence mismatch",
-            )
-            self.artifacts.get(verified.correctness_report)
-            reviews = self._pipeline_reviews(db, task_id, proposal, verified)
-            require(report.get("reviews", {}) == reviews, "pipeline review evidence mismatch")
-            reviews_approved = all(value["verdict"] == "approve" for value in reviews.values())
-            if passed and reviews_approved:
-                job = self._job(db, verified.job_id, verified.attempt)
-                work = self._pipeline_measurement_work(
-                    db, task_id, proposal, job, verified, pb.ArtifactRef(**config["benchmark_plan"])
-                )
-                require(report.get("benchmark_work") == work, "pipeline measurement work mismatch")
-                row = db.execute(
-                    "SELECT a.* FROM artifacts a JOIN benchmark_runs b "
-                    "ON b.report_key=a.key WHERE b.task_id=? AND b.job_id=? "
-                    "AND b.attempt=? ORDER BY b.rowid DESC LIMIT 1",
-                    (task_id, verified.job_id, verified.attempt),
+            terminal = report.get("recovery")
+            verified = None
+            if terminal is not None:
+                recovery = db.execute(
+                    "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=? "
+                    "AND scope='evaluate'",
+                    (task_id, proposal.proposal_id),
                 ).fetchone()
                 require(
-                    row is not None
-                    and report.get("benchmark")
-                    == json.loads(self.artifacts.get(pb.ArtifactRef(**dict(row)))),
-                    "pipeline benchmark evidence mismatch",
+                    recovery is not None
+                    and recovery["state"] in ("quarantined", "exhausted")
+                    and recovery["outcome_key"] is not None
+                    and terminal
+                    == json.loads(self.artifacts.get(self._ref(db, recovery["outcome_key"]))),
+                    "pipeline recovery receipt mismatch",
                 )
-            elif not passed:
                 require(
-                    report.get("benchmark") is None
+                    report.get("verification") == "recovery_terminal"
+                    and report.get("verification_job_id") is None
+                    and report.get("correctness_report") is None
+                    and report.get("benchmark") is None
+                    and report.get("benchmark_work") is None
+                    and report.get("reviews") == {}
+                    and report.get("candidate_selected") is False
                     and report.get("failure")
-                    == {
-                        "reason": pb.FailureReason.Name(verified.failure.reason),
-                        "message": verified.failure.message,
-                    },
-                    "pipeline failure evidence mismatch",
+                    == {"reason": "recovery_terminal", "message": terminal["reason"]},
+                    "terminal pipeline cannot claim candidate evidence",
                 )
             else:
+                require(bool(candidates), "pipeline needs a verification result")
+                verified = candidates[-1]
+                passed = verified.WhichOneof("outcome") == "success"
                 require(
-                    report.get("benchmark") is None, "rejected reviews cannot reach measurement"
+                    report.get("verification_job_id") == verified.job_id
+                    and report.get("verification") == ("passed" if passed else "rejected")
+                    and report.get("correctness_report") == reference(verified.correctness_report),
+                    "pipeline correctness evidence mismatch",
                 )
-            if not passed or not reviews_approved:
-                require(
-                    report.get("benchmark_work") is None, "rejected candidate has measurement work"
-                )
+                self.artifacts.get(verified.correctness_report)
+                reviews = self._pipeline_reviews(db, task_id, proposal, verified)
+                require(report.get("reviews", {}) == reviews, "pipeline review evidence mismatch")
+                reviews_approved = all(value["verdict"] == "approve" for value in reviews.values())
+                if passed and reviews_approved:
+                    job = self._job(db, verified.job_id, verified.attempt)
+                    work = self._pipeline_measurement_work(
+                        db,
+                        task_id,
+                        proposal,
+                        job,
+                        verified,
+                        pb.ArtifactRef(**config["benchmark_plan"]),
+                    )
+                    require(
+                        report.get("benchmark_work") == work, "pipeline measurement work mismatch"
+                    )
+                    row = db.execute(
+                        "SELECT a.* FROM artifacts a JOIN benchmark_runs b "
+                        "ON b.report_key=a.key WHERE b.task_id=? AND b.job_id=? "
+                        "AND b.attempt=? ORDER BY b.rowid DESC LIMIT 1",
+                        (task_id, verified.job_id, verified.attempt),
+                    ).fetchone()
+                    require(
+                        row is not None
+                        and report.get("benchmark")
+                        == json.loads(self.artifacts.get(pb.ArtifactRef(**dict(row)))),
+                        "pipeline benchmark evidence mismatch",
+                    )
+                elif not passed:
+                    require(
+                        report.get("benchmark") is None
+                        and report.get("failure")
+                        == {
+                            "reason": pb.FailureReason.Name(verified.failure.reason),
+                            "message": verified.failure.message,
+                        },
+                        "pipeline failure evidence mismatch",
+                    )
+                else:
+                    require(
+                        report.get("benchmark") is None, "rejected reviews cannot reach measurement"
+                    )
+                if not passed or not reviews_approved:
+                    require(
+                        report.get("benchmark_work") is None,
+                        "rejected candidate has measurement work",
+                    )
             require(
                 report.get("selected_job_id") == (None if decision is None else decision["job_id"]),
                 "pipeline report/decision mismatch",
@@ -361,12 +398,21 @@ class PipelineStorage:
                 ).fetchone()
                 selected = decode_message(pb.VerificationResult, row[0])
                 require(
+                    terminal is None or selected.WhichOneof("subject") == "baseline",
+                    "terminal candidate cannot be selected",
+                )
+                require(
                     report.get("selected_source") == reference(selected.source.bundle)
                     and report.get("reason") == decision["reason"]
-                    and report.get("candidate_selected") == (selected.job_id == verified.job_id),
+                    and report.get("candidate_selected")
+                    == (verified is not None and selected.job_id == verified.job_id),
                     "pipeline selected source mismatch",
                 )
             else:
+                require(
+                    terminal is None or selected.WhichOneof("subject") == "baseline",
+                    "terminal candidate cannot be selected",
+                )
                 require(
                     report.get("selected_source") is None
                     and report.get("candidate_selected") is False,

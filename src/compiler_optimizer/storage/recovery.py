@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from compiler_optimizer.shared.contracts import validate_message
-from compiler_optimizer.shared.lease_context import EXECUTION_LEASE
+from compiler_optimizer.shared.lease_context import EXECUTION_LEASE, RECOVERY_SCOPE
 from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.messaging import encode_message
 from compiler_optimizer.shared.recovery import RecoveryPolicy, canonical, digest
@@ -134,8 +134,8 @@ class RecoveryStorage:
             task_id, proposal_id = proposal.meta.task_id, proposal.proposal_id
             self._task(db, task_id)
             existing = db.execute(
-                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-                (task_id, proposal_id),
+                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=? AND scope=?",
+                (task_id, proposal_id, RECOVERY_SCOPE.get()),
             ).fetchone()
             if existing is not None:
                 if (existing["policy_key"], existing["base_context_json"]) != (
@@ -146,21 +146,25 @@ class RecoveryStorage:
                 return dict(existing)
             self._artifact(db, task_id, policy_ref, "recovery-policy", owner=proposal_id)
             job_id = str(
-                uuid5(NAMESPACE_URL, f"compiler-optimizer:recovery:{task_id}:{proposal_id}")
+                uuid5(
+                    NAMESPACE_URL,
+                    f"compiler-optimizer:recovery:{task_id}:{proposal_id}"
+                    + (":" + RECOVERY_SCOPE.get() if RECOVERY_SCOPE.get() != "evaluate" else ""),
+                )
             )
             db.execute(
                 "INSERT INTO recovery_jobs(task_id,proposal_id,job_id,policy_key,"
-                "base_context_json,state) "
-                "VALUES (?, ?, ?, ?, ?, 'pending')",
-                (task_id, proposal_id, job_id, policy_ref.key, context),
+                "base_context_json,scope,state) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+                (task_id, proposal_id, job_id, policy_ref.key, context, RECOVERY_SCOPE.get()),
             )
         return self.get_recovery_job(task_id, proposal_id)
 
     def get_recovery_job(self, task_id, proposal_id):
         with self._transaction(write=False) as db:
             row = db.execute(
-                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-                (task_id, proposal_id),
+                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=? AND scope=?",
+                (task_id, proposal_id, RECOVERY_SCOPE.get()),
             ).fetchone()
             return None if row is None else dict(row)
 
@@ -170,8 +174,9 @@ class RecoveryStorage:
                 dict(row)
                 for row in db.execute(
                     "SELECT a.* FROM recovery_attempts a JOIN recovery_jobs j "
-                    "ON j.job_id=a.job_id WHERE j.task_id=? AND j.proposal_id=? ORDER BY a.attempt",
-                    (task_id, proposal_id),
+                    "ON j.job_id=a.job_id WHERE j.task_id=? AND j.proposal_id=? "
+                    "AND j.scope=? ORDER BY a.attempt",
+                    (task_id, proposal_id, RECOVERY_SCOPE.get()),
                 )
             ]
 
@@ -190,8 +195,8 @@ class RecoveryStorage:
 
     def _assert_recovery_fence(self, db, lease):
         row = db.execute(
-            "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-            (lease["task_id"], lease["proposal_id"]),
+            "SELECT * FROM recovery_jobs WHERE job_id=?",
+            (lease["job_id"],),
         ).fetchone()
         now = self.recovery_now()
         if (
@@ -260,8 +265,8 @@ class RecoveryStorage:
         with self._transaction() as db:
             self._task(db, task_id, running=True)
             row = db.execute(
-                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-                (task_id, proposal_id),
+                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=? AND scope=?",
+                (task_id, proposal_id, RECOVERY_SCOPE.get()),
             ).fetchone()
             require(row is not None, "recovery job is missing")
             policy, now = self._recovery_policy(db, row), self.recovery_now()
@@ -294,7 +299,7 @@ class RecoveryStorage:
                 "UPDATE recovery_jobs SET state='leased', attempt=?, fence=?, worker_id=?, "
                 "incarnation_id=?, lease_token=?, lease_expires_ms=?, deadline_ms=?, "
                 "execution_context_json=? "
-                "WHERE task_id=? AND proposal_id=?",
+                "WHERE task_id=? AND proposal_id=? AND scope=?",
                 (
                     attempt,
                     fence,
@@ -306,6 +311,7 @@ class RecoveryStorage:
                     encoded,
                     task_id,
                     proposal_id,
+                    RECOVERY_SCOPE.get(),
                 ),
             )
             db.execute(
@@ -330,13 +336,12 @@ class RecoveryStorage:
                 "worker is no longer healthy",
             )
             db.execute(
-                "UPDATE recovery_jobs SET lease_expires_ms=? WHERE task_id=? AND proposal_id=?",
+                "UPDATE recovery_jobs SET lease_expires_ms=? WHERE job_id=?",
                 (
                     min(
                         lease["deadline_ms"], self.recovery_now() + int(policy.lease_seconds * 1000)
                     ),
-                    lease["task_id"],
-                    lease["proposal_id"],
+                    lease["job_id"],
                 ),
             )
 
@@ -410,8 +415,8 @@ class RecoveryStorage:
     def expire_recovery_lease(self, task_id, proposal_id):
         with self._transaction() as db:
             row = db.execute(
-                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-                (task_id, proposal_id),
+                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=? AND scope=?",
+                (task_id, proposal_id, RECOVERY_SCOPE.get()),
             ).fetchone()
             if row is None or row["state"] != "leased":
                 return False
@@ -448,16 +453,17 @@ class RecoveryStorage:
     def confirm_recovery_cleanup(self, task_id, proposal_id, token):
         with self._transaction() as db:
             db.execute(
-                "UPDATE recovery_jobs SET cleanup_token=NULL WHERE task_id=? AND proposal_id=? "
+                "UPDATE recovery_jobs SET cleanup_token=NULL "
+                "WHERE task_id=? AND proposal_id=? AND scope=? "
                 "AND cleanup_token=?",
-                (task_id, proposal_id, token),
+                (task_id, proposal_id, RECOVERY_SCOPE.get(), token),
             )
 
     def defer_unavailable_worker(self, task_id, proposal_id):
         with self._transaction() as db:
             row = db.execute(
-                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-                (task_id, proposal_id),
+                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=? AND scope=?",
+                (task_id, proposal_id, RECOVERY_SCOPE.get()),
             ).fetchone()
             require(row["state"] in ("pending", "backoff"), "cannot defer active job")
             policy, now = self._recovery_policy(db, row), self.recovery_now()
@@ -486,8 +492,8 @@ class RecoveryStorage:
     ):
         with self._transaction() as db:
             row = db.execute(
-                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-                (task_id, proposal_id),
+                "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=? AND scope=?",
+                (task_id, proposal_id, RECOVERY_SCOPE.get()),
             ).fetchone()
             if lease is not None:
                 self._assert_recovery_fence(db, lease)
@@ -563,7 +569,7 @@ class RecoveryStorage:
             return [
                 dict(row)
                 for row in db.execute(
-                    "SELECT o.*, j.task_id, j.proposal_id, j.state AS job_state "
+                    "SELECT o.*, j.task_id, j.proposal_id, j.scope, j.state AS job_state "
                     "FROM recovery_outbox o JOIN recovery_jobs j ON j.job_id=o.job_id "
                     "WHERE j.task_id=? "
                     "AND (?=0 OR o.sent_ms IS NULL) ORDER BY o.rowid",
@@ -581,8 +587,9 @@ class RecoveryStorage:
     def recovery_outcome(self, task_id, proposal_id):
         with self._transaction(write=False) as db:
             row = db.execute(
-                "SELECT outcome_key FROM recovery_jobs WHERE task_id=? AND proposal_id=?",
-                (task_id, proposal_id),
+                "SELECT outcome_key FROM recovery_jobs "
+                "WHERE task_id=? AND proposal_id=? AND scope=?",
+                (task_id, proposal_id, RECOVERY_SCOPE.get()),
             ).fetchone()
             return (
                 None
@@ -592,7 +599,8 @@ class RecoveryStorage:
 
     def managed_benchmark_retry_allowed(self, db, task_id, proposal_id, job_id):
         row = db.execute(
-            "SELECT * FROM recovery_jobs WHERE task_id=? AND proposal_id=?", (task_id, proposal_id)
+            "SELECT * FROM recovery_jobs WHERE job_id=?",
+            ((EXECUTION_LEASE.get() or {}).get("job_id"),),
         ).fetchone()
         if row is None:
             return False

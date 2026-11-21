@@ -68,6 +68,7 @@ class Repository(
                 (6, "recovery.sql"),
                 (7, "execution.sql"),
                 (8, "fleet.sql"),
+                (9, "recovery_scopes.sql"),
             ):
                 if version == target - 1:
                     schema = files("compiler_optimizer.storage").joinpath(name).read_text()
@@ -76,7 +77,7 @@ class Repository(
                             db.execute(statement)
                     db.execute(f"PRAGMA user_version = {target}")
                     version = target
-            if version != 8:
+            if version != 9:
                 raise StateError(f"unsupported database schema version: {version}")
 
     @contextmanager

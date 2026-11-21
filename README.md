@@ -149,7 +149,8 @@ The original program is retained when no candidate shows a reliable weighted gai
 ## Fault recovery
 
 Fault recovery provides [leased execution, healthy-worker retries and scoped Redis quarantine](docs/fault-recovery.md).
-The cohort CLI enables recovery by default with two local sandbox workers. RabbitMQ
+The cohort, legacy pipeline and standalone verification/benchmark CLIs enable
+recovery by default with two local sandbox workers. RabbitMQ
 uses manual acknowledgements, confirmed delayed retries and dead letters; stale
 workers cannot commit results. Two matching crashes on separate healthy workers
 quarantine only the exact transformation, source and execution context. Automated

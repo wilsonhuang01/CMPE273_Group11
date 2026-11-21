@@ -33,10 +33,39 @@ sandbox policy. `--workers` accepts 1–8; at least two available, context-compa
 workers are needed to confirm a crash independently. Work runs sequentially per
 cohort; this is a host-managed sandbox pool, not remote worker dispatch. Compose's
 application worker still does not receive the Docker socket or execute submissions.
-The SDK opts in with `CohortCoordinator(..., recovery=RecoveryController(...))`.
-Use `round --agents performance` for a single candidate with recovery. The older
-`coordinator.pipeline` and standalone verification/benchmark commands retain their
-existing execution behavior and do not consult the blacklist.
+The SDK opts in with `CohortCoordinator(..., recovery=RecoveryController(...))`
+or `PipelineCoordinator(..., recovery=RecoveryController(...))`.
+
+The legacy `coordinator.pipeline` CLI and standalone `workers.verify` and
+`workers.benchmark` CLIs also enable the same leased executor and Redis quarantine
+checks by default. They use the same Redis environment settings, bounded attempt
+budget, watchdog cleanup and exact source/context identity. Standalone commands
+honor durable backoff locally; the pipeline uses broker retry deliveries. Redis
+outages fail closed and consume the frozen retry budget. Confirmed exclusions are
+stored durably before publication to Redis; failed publication remains pending.
+Read-only inspection and compilation-only commands do not require Redis.
+
+Standalone verification and benchmarking keep separate recovery checkpoints.
+Benchmark checkpoints are scoped to the verification job and attempt, so a cached
+verification never skips measurement. Completed measurements are reused; only
+infrastructure/measurement failures can retry. A benchmark program crash is
+confirmed through independent verification rather than repeated measurement.
+`workers.verify --benchmark-plan PLAN.json` sets the benchmark component of the
+quarantine context (default: the standard benchmark plan). Supply the same trusted
+plans when resuming custom standalone work. Attempts to replace existing
+verification plans or frozen pipeline/cohort plans fail before execution.
+
+For embedded callers, `workers.execution.execute_verification` and
+`execute_benchmark` provide these managed standalone paths and accept an injected
+`RecoveryController`. The lower-level `run_verification` and `run_benchmark`
+functions are executor primitives used inside the active lease. They reject
+unfenced writes once a proposal has managed recovery state.
+
+Database schema 9 adds operation scopes while retaining existing job IDs, frozen
+policy/context artifacts, attempt counts, outcomes and outbox events. Existing
+pipeline checkpoints retain their stored verification, benchmark and selection
+policies. A terminal legacy candidate produces an evidence-checked recovery report
+and retains the baseline through the existing selection gates.
 
 ## Delivery and retry rules
 

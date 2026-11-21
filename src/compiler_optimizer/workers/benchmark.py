@@ -13,6 +13,7 @@ from compiler_optimizer.shared.benchmarking import (
     pair_order,
 )
 from compiler_optimizer.shared.manifest import ContractError, require
+from compiler_optimizer.shared.recovery import RecoveryTerminal
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.storage import Repository
 from compiler_optimizer.storage.errors import StorageError
@@ -179,13 +180,22 @@ def main():
         plan = BenchmarkPlan.parse(Path(args.plan).read_bytes()) if args.plan else BenchmarkPlan()
         repository = Repository(args.state)
         runner = DockerRunner(args.image, watchdog_directory=Path(args.state) / "watchdogs")
-        report = run_benchmark(
+        from compiler_optimizer.workers.execution import execute_benchmark
+
+        report = execute_benchmark(
             repository, args.task_id, args.verification_job, runner, plan, attempt=args.attempt
         )
         print(json.dumps({"run_id": report["run_id"], **report["analysis"]}, sort_keys=True))
         raw = json.loads(repository.artifacts.get(pb.ArtifactRef(**report["raw"])))
         return 0 if raw["status"] == "completed" else 1
-    except (ContractError, InfrastructureError, StorageError, OSError, ValueError) as error:
+    except (
+        ContractError,
+        InfrastructureError,
+        StorageError,
+        OSError,
+        ValueError,
+        RecoveryTerminal,
+    ) as error:
         print(json.dumps({"error": str(error)}))
         return 2
 

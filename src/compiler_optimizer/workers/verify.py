@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from compiler_optimizer.shared.manifest import ContractError, require
+from compiler_optimizer.shared.recovery import RecoveryTerminal
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.storage import Repository
 from compiler_optimizer.storage.errors import StorageError
@@ -386,6 +387,7 @@ def main():
     parser.add_argument(
         "--plan", help="Trusted verification-plan JSON; defaults to exact output + UBSan"
     )
+    parser.add_argument("--benchmark-plan", help="Benchmark plan defining quarantine context")
     parser.add_argument("--state", default="var")
     parser.add_argument("--image")
     parser.add_argument("--target", choices=tuple(DEFAULT_IMAGES), default="linux-x86_64")
@@ -410,8 +412,25 @@ def main():
         proposal_id = args.proposal_id or register_candidate(
             repository, args.task_id, args.candidate
         )
-        result = run_verification(repository, args.task_id, proposal_id, runner, plan)
-    except (ContractError, InfrastructureError, StorageError, OSError, ValueError) as error:
+        from compiler_optimizer.shared.benchmarking import BenchmarkPlan
+        from compiler_optimizer.workers.execution import execute_verification
+
+        benchmark_plan = (
+            BenchmarkPlan.parse(Path(args.benchmark_plan).read_bytes())
+            if args.benchmark_plan
+            else BenchmarkPlan()
+        )
+        result = execute_verification(
+            repository, args.task_id, proposal_id, runner, plan, benchmark_plan
+        )
+    except (
+        ContractError,
+        InfrastructureError,
+        StorageError,
+        OSError,
+        ValueError,
+        RecoveryTerminal,
+    ) as error:
         print(json.dumps({"error": str(error)}))
         return 2
     passed = result.WhichOneof("outcome") == "success"

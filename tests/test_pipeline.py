@@ -329,7 +329,7 @@ def test_schema_two_migration_keeps_task_history(workflow):
     assert reopened.history(task) == history
     assert reopened.get_pipeline(task) is None
     with sqlite3.connect(repository.database) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
 
 
 def broker_fixture(proposal):

@@ -23,6 +23,7 @@ from compiler_optimizer.shared.benchmarking import BenchmarkPlan
 from compiler_optimizer.shared.manifest import ContractError, require
 from compiler_optimizer.shared.messaging import encode_message
 from compiler_optimizer.shared.patches import apply_patch
+from compiler_optimizer.shared.recovery import RecoveryTerminal
 from compiler_optimizer.shared.selection import SelectionPolicy
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.storage import Repository
@@ -37,8 +38,18 @@ from compiler_optimizer.workers.verify import _snapshot
 
 
 class PipelineCoordinator:
-    def __init__(self, repository, runner, broker, *, review_backends=None, selection_policy=None):
+    def __init__(
+        self,
+        repository,
+        runner,
+        broker,
+        *,
+        review_backends=None,
+        selection_policy=None,
+        recovery=None,
+    ):
         self.repository, self.runner, self.broker = repository, runner, broker
+        self.recovery = recovery
         self.last_task_id = None
         self.selection_policy = selection_policy
         if selection_policy is not None:
@@ -76,6 +87,8 @@ class PipelineCoordinator:
 
     def _run(self, task_id, backend, verification_plan, benchmark_plan, agent):
         repository = self.repository
+        if self.recovery is not None:
+            self.recovery.publish_quarantines(task_id)
         session = repository.get_selection_session(task_id)
         if self.selection_policy is not None and session is not None:
             require(
@@ -214,6 +227,8 @@ class PipelineCoordinator:
         )
         require(encode_message(proposal) == encode_message(stored), "pipeline proposal was altered")
         self._ensure_selection(proposal)
+        if self.recovery is not None:
+            self.recovery.publish_quarantines(task_id)
         submission = repository.get_task(task_id)["submission"]
         patch, changed = apply_patch(
             repository.artifacts.get(pb.ArtifactRef(**run["configuration"]["patch"])),
@@ -226,13 +241,17 @@ class PipelineCoordinator:
             and patch["transformation"] == proposal.transformation,
             "stored patch and proposal differ",
         )
-        verified, benchmark, reviews, work = evaluate_proposal(
-            repository,
-            task_id,
-            proposal.proposal_id,
-            self.runner,
-            review_backends=self.review_backends,
-        )
+        try:
+            verified, benchmark, reviews, work = evaluate_proposal(
+                repository,
+                task_id,
+                proposal.proposal_id,
+                self.runner,
+                review_backends=self.review_backends,
+                recovery=self.recovery,
+            )
+        except RecoveryTerminal as error:
+            return self._finish_terminal(proposal, run, error.receipt)
         baselines = [
             result
             for result in repository.list_results(task_id)
@@ -325,6 +344,68 @@ class PipelineCoordinator:
         repository.finish_pipeline(task_id, ref)
         return report
 
+    def _finish_terminal(self, proposal, run, receipt):
+        repository = self.repository
+        task_id = proposal.meta.task_id
+        selection = None
+        if repository.get_selection_session(task_id) is not None:
+            evidence = repository.artifacts.put(json.dumps(receipt, sort_keys=True).encode())
+            repository.record_selection_progress(
+                task_id, proposal.proposal_id, "assessment_failed", evidence
+            )
+            selection = SelectionCoordinator(repository).choose(task_id)
+        elif repository.get_task(task_id)["status"] == "running":
+            baselines = [
+                r
+                for r in repository.list_results(task_id)
+                if r.WhichOneof("subject") == "baseline" and r.WhichOneof("outcome") == "success"
+            ]
+            baseline = baselines[-1]
+            repository.select_result(
+                task_id,
+                baseline.job_id,
+                baseline.attempt,
+                expected_revision=repository.get_task(task_id)["revision"],
+                reason="recovery_terminal",
+            )
+        decision = repository.get_decision(task_id)
+        selected = next(
+            (
+                r
+                for r in repository.list_results(task_id)
+                if decision and r.job_id == decision["job_id"] and r.attempt == decision["attempt"]
+            ),
+            None,
+        )
+        report = {
+            "schema_version": run["configuration"]["schema_version"],
+            "task_id": task_id,
+            "proposal_id": proposal.proposal_id,
+            "status": repository.get_task(task_id)["status"],
+            "reason": decision["reason"] if decision else "baseline_invalidated",
+            "agent": role_spec(proposal.role).name,
+            "rationale": proposal.rationale,
+            "transformation": proposal.transformation,
+            "patch": run["configuration"]["patch"],
+            "selected_job_id": selected.job_id if selected else None,
+            "selected_source": reference(selected.source.bundle) if selected else None,
+            "candidate_selected": False,
+            "verification_job_id": None,
+            "verification": "recovery_terminal",
+            "correctness_report": None,
+            "failure": {"reason": "recovery_terminal", "message": receipt["reason"]},
+            "benchmark": None,
+            "reviews": {},
+            "benchmark_work": None,
+            "selection": selection,
+            "recovery": receipt,
+        }
+        repository.finish_pipeline(
+            task_id, repository.artifacts.put(json.dumps(report, sort_keys=True).encode())
+        )
+        self.recovery.publish_quarantines(task_id)
+        return self.recovery.deadletter_result(receipt, report)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -345,10 +426,13 @@ def main():
     try:
         repository = Repository(args.state)
         runner = DockerRunner(args.image, watchdog_directory=Path(args.state) / "watchdogs")
+        from compiler_optimizer.workers.execution import local_recovery
+
         coordinator = PipelineCoordinator(
             repository,
             runner,
             RabbitProposalQueue(Settings.from_env("coordinator")),
+            recovery=local_recovery(repository, runner),
             selection_policy=SelectionPolicy.parse(Path(args.selection_policy).read_bytes())
             if args.selection_policy
             else None,
@@ -375,6 +459,7 @@ def main():
         return 0 if report["status"] == "completed" else 1
     except (
         ContractError,
+        RecoveryTerminal,
         StorageError,
         InfrastructureError,
         DeliveryError,

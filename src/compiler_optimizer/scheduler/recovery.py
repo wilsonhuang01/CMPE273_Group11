@@ -5,11 +5,13 @@ import json
 import queue
 import threading
 import time
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from uuid import uuid4
 
 from compiler_optimizer.monitoring.events import emit
 from compiler_optimizer.scheduler.blacklist import BlacklistUnavailable, RedisBlacklist
+from compiler_optimizer.shared.lease_context import RECOVERY_SCOPE
 from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.messaging import decode_message, encode_message
 from compiler_optimizer.shared.recovery import (
@@ -273,7 +275,14 @@ class RecoveryController:
                 return False
             time.sleep(min(0.1, remaining))
 
-    def evaluate(self, proposal, config, action):
+    def evaluate(self, proposal, config, action, *, scope="evaluate"):
+        token = RECOVERY_SCOPE.set(scope)
+        try:
+            return self._evaluate_scoped(proposal, config, action)
+        finally:
+            RECOVERY_SCOPE.reset(token)
+
+    def _evaluate_scoped(self, proposal, config, action):
         try:
             return self._evaluate(proposal, config, action)
         except LeaseLost:
@@ -369,7 +378,8 @@ class RecoveryController:
             except BaseException as error:
                 results.put((False, error))
 
-        thread = threading.Thread(target=execute, daemon=True)
+        thread_context = copy_context()
+        thread = threading.Thread(target=thread_context.run, args=(execute,), daemon=True)
         thread.start()
         started = time.monotonic()
         deadline = started + policy.attempt_timeout_seconds
@@ -553,7 +563,7 @@ class RecoveryController:
         events = [
             e
             for e in self.repository.recovery_outbox(receipt["task_id"], pending=False)
-            if e["proposal_id"] == receipt["proposal_id"] and e["kind"] == "deadletter"
+            if e["job_id"] == receipt["recovery_job_id"] and e["kind"] == "deadletter"
         ]
         event = events[-1]
         if event["sent_ms"] is not None:
@@ -564,6 +574,20 @@ class RecoveryController:
             event["event_id"],
             lambda: self.repository.mark_recovery_event_sent(event["event_id"]),
         )
+
+    def publish_quarantines(self, task_id):
+        """Publish durable exclusions even for standalone commands without a broker."""
+        for event in self.repository.recovery_outbox(task_id):
+            if event["kind"] != "blacklist":
+                continue
+            payload = json.loads(event["payload_json"])
+            record = json.loads(self.repository.artifacts.get(pb.ArtifactRef(**payload["record"])))
+            if record["expires_ms"] > self.repository.recovery_now():
+                try:
+                    self.blacklist.put(record, self.repository.recovery_now())
+                except BlacklistUnavailable:
+                    continue
+            self.repository.mark_recovery_event_sent(event["event_id"])
 
     def flush_outbox(self, task_id, broker):
         for event in self.repository.recovery_outbox(task_id):
@@ -590,7 +614,11 @@ class RecoveryController:
                     for p in self.repository.list_proposals(task_id)
                     if p.proposal_id == event["proposal_id"]
                 )
-                job = self.repository.get_recovery_job(task_id, proposal.proposal_id)
+                token = RECOVERY_SCOPE.set(event["scope"])
+                try:
+                    job = self.repository.get_recovery_job(task_id, proposal.proposal_id)
+                finally:
+                    RECOVERY_SCOPE.reset(token)
                 broker.publish_recovery_event(
                     proposal,
                     event["kind"],
