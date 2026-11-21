@@ -29,7 +29,7 @@ submission examples, status, retry limits and the distinction from Compose intak
 
 ## Initial implementation scope
 
-The [implementation backlog](backlog/index.html) lists remaining actions,
+The [implementation backlog](backlog/index.html) [(Preview)](https://html-preview.github.io/?url=https://github.com/wilsonhuang01/CMPE273_Group11/blob/main/backlog/index.html) lists remaining actions,
 dependencies and completion criteria in a browser-readable document.
 
 The first milestone targets deterministic C17/C++17 command-line programs on
