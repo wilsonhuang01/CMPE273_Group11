@@ -19,8 +19,10 @@ from compiler_optimizer.shared.lease_context import EXECUTION_LEASE
 from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.messaging import decode_message, encode_message
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
+from compiler_optimizer.shared.workflow import validate_workflow
 from compiler_optimizer.storage.artifacts import ArtifactStore
 from compiler_optimizer.storage.errors import ConflictError, NotFoundError, StateError
+from compiler_optimizer.storage.execution import ExecutionStorage
 from compiler_optimizer.storage.pipeline import PipelineStorage
 from compiler_optimizer.storage.recovery import RecoveryStorage
 from compiler_optimizer.storage.selection import SelectionStorage
@@ -30,7 +32,7 @@ def _now() -> int:
     return time.time_ns() // 1_000_000
 
 
-class Repository(PipelineStorage, SelectionStorage, RecoveryStorage):
+class Repository(PipelineStorage, SelectionStorage, RecoveryStorage, ExecutionStorage):
     """Use one instance per service; operations open their own SQLite connection.
 
     All processes accessing this directory must be on the same host. This class
@@ -57,6 +59,7 @@ class Repository(PipelineStorage, SelectionStorage, RecoveryStorage):
                 (4, "agents.sql"),
                 (5, "selection.sql"),
                 (6, "recovery.sql"),
+                (7, "execution.sql"),
             ):
                 if version == target - 1:
                     schema = files("compiler_optimizer.storage").joinpath(name).read_text()
@@ -65,7 +68,7 @@ class Repository(PipelineStorage, SelectionStorage, RecoveryStorage):
                             db.execute(statement)
                     db.execute(f"PRAGMA user_version = {target}")
                     version = target
-            if version != 6:
+            if version != 7:
                 raise StateError(f"unsupported database schema version: {version}")
 
     @contextmanager
@@ -142,8 +145,18 @@ class Repository(PipelineStorage, SelectionStorage, RecoveryStorage):
             (task_id, status, revision, reason, _now()),
         )
 
-    def save_submission(self, message: pb.Submission) -> bool:
+    def save_submission(self, message: pb.Submission, *, execution=None) -> bool:
         payload = encode_message(message)
+        configuration = None if execution is None else validate_workflow(execution)
+        if execution is not None:
+            from compiler_optimizer.workers.package import package_from_files, unbundle
+
+            package = package_from_files(unbundle(self.artifacts.get(message.package)))
+            require(package.manifest == message.manifest, "submission package manifest mismatch")
+            require(
+                package.source_bundle == self.artifacts.get(message.source.bundle),
+                "submission package/source mismatch",
+            )
         with self._transaction() as db:
             if self._seen(db, message, payload):
                 return False
@@ -154,6 +167,11 @@ class Repository(PipelineStorage, SelectionStorage, RecoveryStorage):
             self._artifact(db, message.meta.task_id, message.source.bundle, "source")
             self._record(db, message, payload)
             self._history(db, message.meta.task_id, "accepted", 0, "Submission accepted")
+            if configuration is not None:
+                db.execute(
+                    "INSERT INTO submission_executions(task_id, configuration_json) VALUES (?, ?)",
+                    (message.meta.task_id, configuration),
+                )
         return True
 
     def get_task(self, task_id: str) -> dict:

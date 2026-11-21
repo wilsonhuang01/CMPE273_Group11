@@ -87,18 +87,31 @@ class CohortCoordinator:
     ):
         self.last_task_id = task_id
         with self.repository.pipeline_lock():
-            session = self.repository.get_selection_session(task_id)
-            if session is None:
-                self._prepare(task_id, agents, policy, verification_plan, benchmark_plan)
-            else:
-                require(
-                    agents is None
-                    and policy is None
-                    and verification_plan is None
-                    and benchmark_plan is None,
-                    "resume uses the frozen cohort and policies",
-                )
-            return self._run(task_id)
+            return self.resume_locked(
+                task_id,
+                agents=agents,
+                policy=policy,
+                verification_plan=verification_plan,
+                benchmark_plan=benchmark_plan,
+            )
+
+    def resume_locked(
+        self, task_id, *, agents=None, policy=None, verification_plan=None, benchmark_plan=None
+    ):
+        """Resume while the caller holds pipeline_lock across baseline and cohort work."""
+        self.last_task_id = task_id
+        session = self.repository.get_selection_session(task_id)
+        if session is None:
+            self._prepare(task_id, agents, policy, verification_plan, benchmark_plan)
+        else:
+            require(
+                agents is None
+                and policy is None
+                and verification_plan is None
+                and benchmark_plan is None,
+                "resume uses the frozen cohort and policies",
+            )
+        return self._run(task_id)
 
     def _prepare(self, task_id, agents, policy, verification_plan, benchmark_plan):
         repository = self.repository

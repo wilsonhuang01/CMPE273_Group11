@@ -132,7 +132,10 @@ services:
   coordinator:
     <<: *app
     command: [--role, coordinator]
-    environment: *environment
+    environment:
+      <<: *environment
+      EXECUTION_ENABLED: "false"
+      GRPC_HOST: "0.0.0.0"
     ports:
       - "127.0.0.1:${COORDINATOR_GRPC_PORT:-50051}:50051"
       - "127.0.0.1:${COORDINATOR_HEALTH_PORT:-18080}:8080"

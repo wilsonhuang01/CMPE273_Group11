@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from compiler_optimizer.monitoring.events import verification_committed
-from compiler_optimizer.shared.manifest import ContractError
+from compiler_optimizer.shared.manifest import ContractError, require
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.storage import Repository
 from compiler_optimizer.workers.docker_runner import DockerRunner, InfrastructureError
@@ -32,20 +32,64 @@ def metadata(task_id):
     )
 
 
-def run_baseline(package, repository, runner) -> pb.VerificationResult:
-    """Synchronous coordinator/worker path; successful tasks remain running for agents."""
-    task_id = str(uuid4())
+def run_baseline(package, repository, runner, *, task_id=None) -> pb.VerificationResult:
+    """Run a new baseline or resume an automatically submitted task under its original ID.
+
+    Callers resuming an existing task must hold the repository pipeline lock.
+    Successful/rejected results are checkpoints; only interrupted or infrastructure
+    attempts may execute again. Automatic dispatch owns their total attempt budget.
+    """
+    resuming = task_id is not None
     manifest = package.manifest
     compiler = runner.compiler(manifest.language)
-    submission = pb.Submission(
-        meta=metadata(task_id),
-        manifest=manifest,
-        compiler=compiler,
-        package=repository.artifacts.put(package.package_bundle),
-        source=pb.SourceVersion(version=1, bundle=repository.artifacts.put(package.source_bundle)),
-    )
-    repository.save_submission(submission)
-    repository.transition(task_id, expected_revision=0, status="running", reason="Baseline started")
+    if not resuming:
+        task_id = str(uuid4())
+        submission = pb.Submission(
+            meta=metadata(task_id),
+            manifest=manifest,
+            compiler=compiler,
+            package=repository.artifacts.put(package.package_bundle),
+            source=pb.SourceVersion(
+                version=1, bundle=repository.artifacts.put(package.source_bundle)
+            ),
+        )
+        repository.save_submission(submission)
+    else:
+        submission = repository.get_task(task_id)["submission"]
+        require(
+            submission.compiler == compiler
+            and submission.manifest == manifest
+            and repository.artifacts.get(submission.package) == package.package_bundle
+            and repository.artifacts.get(submission.source.bundle) == package.source_bundle,
+            "baseline resume changes submitted package/source/compiler",
+        )
+    task = repository.get_task(task_id)
+    if task["status"] == "accepted":
+        repository.transition(
+            task_id, expected_revision=task["revision"], status="running", reason="Baseline started"
+        )
+    else:
+        require(task["status"] == "running", "baseline requires an active task")
+    jobs = [j for j in repository.list_jobs(task_id) if j.WhichOneof("subject") == "baseline"]
+    prior = [r for r in repository.list_results(task_id) if r.WhichOneof("subject") == "baseline"]
+
+    def reject(result):
+        task = repository.get_task(task_id)
+        if task["status"] == "running":
+            repository.transition(
+                task_id,
+                expected_revision=task["revision"],
+                status="failed",
+                reason="Baseline rejected: " + pb.FailureReason.Name(result.failure.reason),
+            )
+
+    if prior:
+        cached = prior[-1]
+        if cached.WhichOneof("outcome") == "success":
+            return cached
+        if cached.failure.reason != pb.INFRASTRUCTURE_ERROR:
+            reject(cached)
+            return cached
     job_meta = metadata(task_id)
     count = len(manifest.tests) + len(manifest.benchmark_test_ids)
     budget = (
@@ -55,12 +99,12 @@ def run_baseline(package, repository, runner) -> pb.VerificationResult:
     )
     job = pb.VerificationJob(
         meta=job_meta,
-        job_id=str(uuid4()),
+        job_id=jobs[-1].job_id if jobs else str(uuid4()),
         baseline=True,
         source=submission.source,
         manifest=manifest,
         compiler=compiler,
-        attempt=1,
+        attempt=jobs[-1].attempt + 1 if jobs else 1,
         deadline_unix_ms=job_meta.created_at_unix_ms + budget * 1000,
     )
     repository.save_job(job)
@@ -68,7 +112,7 @@ def run_baseline(package, repository, runner) -> pb.VerificationResult:
         meta=metadata(task_id),
         job_id=job.job_id,
         worker_id=str(uuid4()),
-        attempt=1,
+        attempt=job.attempt,
         baseline=True,
         source=job.source,
         compiler=compiler,
@@ -111,7 +155,7 @@ def run_baseline(package, repository, runner) -> pb.VerificationResult:
                 raise InfrastructureError("compiler did not produce an executable")
             binary_ref = repository.artifacts.put(compiled.binary)
             repository.attach_artifact(
-                task_id, binary_ref, kind="binary", job_id=job.job_id, attempt=1
+                task_id, binary_ref, kind="binary", job_id=job.job_id, attempt=job.attempt
             )
             success = pb.VerificationSuccess()
             for stage, cases in (
@@ -169,12 +213,8 @@ def run_baseline(package, repository, runner) -> pb.VerificationResult:
     if repository.save_result(result):
         verification_committed(result)
     if result.WhichOneof("outcome") == "failure":
-        repository.transition(
-            task_id,
-            expected_revision=1,
-            status="failed",
-            reason="Baseline rejected: " + pb.FailureReason.Name(result.failure.reason),
-        )
+        if not resuming or result.failure.reason != pb.INFRASTRUCTURE_ERROR:
+            reject(result)
     return result
 
 

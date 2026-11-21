@@ -14,6 +14,7 @@ from compiler_optimizer.monitoring.metrics import Metrics
 from compiler_optimizer.runtime.config import Settings
 from compiler_optimizer.runtime.coordinator import CoordinatorService
 from compiler_optimizer.runtime.dependencies import check_coordinator, check_rabbitmq, check_redis
+from compiler_optimizer.runtime.dispatch import SubmissionDispatcher
 from compiler_optimizer.runtime.health import Readiness, health_server
 from compiler_optimizer.runtime.worker_health import WorkerHealthService
 from compiler_optimizer.shared.contracts import MAX_MESSAGE_BYTES
@@ -32,6 +33,7 @@ def run(settings):
     grpc_server = None
     executor = None
     repository = None
+    dispatcher = None
     if settings.role == "coordinator":
         repository = Repository(settings.state_directory)
         probes["storage"] = repository.check_health
@@ -43,9 +45,14 @@ def run(settings):
                 ("grpc.max_send_message_length", MAX_MESSAGE_BYTES),
             ],
         )
-        rpc.add_CoordinatorServiceServicer_to_server(CoordinatorService(repository), grpc_server)
+        rpc.add_CoordinatorServiceServicer_to_server(
+            CoordinatorService(repository, execution_enabled=settings.execution_enabled),
+            grpc_server,
+        )
+        if settings.execution_enabled:
+            dispatcher = SubmissionDispatcher(repository, settings)
         rpc.add_WorkerHealthServiceServicer_to_server(WorkerHealthService(repository), grpc_server)
-        if not grpc_server.add_insecure_port(f"0.0.0.0:{settings.grpc_port}"):
+        if not grpc_server.add_insecure_port(f"{settings.grpc_host}:{settings.grpc_port}"):
             raise RuntimeError("cannot bind coordinator gRPC port")
         grpc_server.start()
     else:
@@ -54,7 +61,12 @@ def run(settings):
     server = None
     threads = []
     try:
-        state = Readiness(settings.role, probes, interval=settings.probe_interval_seconds)
+        state = Readiness(
+            settings.role,
+            probes,
+            interval=settings.probe_interval_seconds,
+            execution_enabled=dispatcher is not None,
+        )
         server = health_server(
             (settings.health_host, settings.health_port),
             state,
@@ -64,10 +76,18 @@ def run(settings):
             threading.Thread(target=server.serve_forever, daemon=True),
             threading.Thread(target=state.run, args=(stop,), daemon=True),
         ]
+        if dispatcher is not None:
+            threads.append(threading.Thread(target=dispatcher.run, args=(stop,), daemon=True))
         for thread in threads:
             thread.start()
         logging.info(
-            json.dumps({"event": "started", "service": settings.role, "execution_enabled": False})
+            json.dumps(
+                {
+                    "event": "started",
+                    "service": settings.role,
+                    "execution_enabled": dispatcher is not None,
+                }
+            )
         )
         stop.wait()
     finally:

@@ -6,6 +6,8 @@ The canonical service and queue schema is
 client/server stubs are checked in beside it. These contracts are used by the
 implemented local runtime, host coordinators, agents, broker adapter and recovery
 controller. See [current progress](README.md) for execution and deployment boundaries.
+The [automatic host coordinator](automatic-execution.md) atomically schedules
+`SubmitSubmission` requests for execution; Compose's coordinator is intake-only.
 
 ## User submission format
 

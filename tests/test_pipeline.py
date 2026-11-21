@@ -321,12 +321,13 @@ def test_schema_two_migration_keeps_task_history(workflow):
         db.execute("DROP TABLE selection_sessions")
         db.execute("DROP TABLE agent_iterations")
         db.execute("DROP TABLE pipeline_runs")
+        db.execute("DROP TABLE submission_executions")
         db.execute("PRAGMA user_version=2")
     reopened = Repository(repository.root)
     assert reopened.history(task) == history
     assert reopened.get_pipeline(task) is None
     with sqlite3.connect(repository.database) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 def broker_fixture(proposal):

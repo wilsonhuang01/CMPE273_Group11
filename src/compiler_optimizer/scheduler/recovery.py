@@ -88,13 +88,15 @@ class RecoveryController:
         self.explicit_policy = policy is not None
 
     @classmethod
-    def local(cls, repository, runner, settings, *, policy=None, worker_count=2):
+    def local(
+        cls, repository, runner, settings, *, policy=None, worker_count=2, watchdog_directory=None
+    ):
         workers = [Worker(runner=runner)]
         workers.extend(
             Worker(
                 factory=lambda: DockerRunner(
                     runner.image,
-                    watchdog_directory=repository.root / "watchdogs",
+                    watchdog_directory=watchdog_directory or repository.root / "watchdogs",
                     target=runner.target,
                 )
             )

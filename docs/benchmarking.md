@@ -108,7 +108,7 @@ Within a frozen cohort, only infrastructure-failed batches can retry under a
 
 ## Persistence and selection
 
-The benchmark migration introduced schema v2 (the current repository schema is v6)
+The benchmark migration introduced schema v2 (the current repository schema is v7)
 and adds immutable
 `benchmark_runs` records linked to the verification result. Versioned JSON plan,
 raw measurements (at most 64 MiB), and derived report are content-addressed

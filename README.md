@@ -21,6 +21,12 @@ raw evidence, release commands and measured limitations. The
 [recorded comparison](benchmarks/results/step16/report.html) reports actual native
 ARM64 results; handwritten candidate rules are used, with no external model calls.
 
+Run `./project serve` to start a host coordinator that automatically executes
+`SubmitSubmission` requests through baseline, generation, verification, benchmarking
+and selection. It persists task IDs, frozen policies and execution checkpoints across
+restarts. See [automatic submission execution](docs/automatic-execution.md) for
+submission examples, status, retry limits and the distinction from Compose intake.
+
 ## Initial implementation scope
 
 The first milestone targets deterministic C17/C++17 command-line programs on

@@ -38,7 +38,7 @@ jobs:
       - name: Check generated message contracts
         run: python tools/generate_contracts.py --check
       - name: Test contracts, storage, and service runtime
-        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_baseline.py tests/test_sandbox.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_evaluation.py
+        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_baseline.py tests/test_sandbox.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_evaluation.py
       - name: Check C formatting
         run: clang-format --dry-run --Werror examples/sum-array/main.c examples/sum-array-optimized/main.c examples/sum-array-buffered/main.c
       - name: Configure and build trusted example
@@ -91,7 +91,7 @@ jobs:
           RISCV_DOCKER_TESTS: "1"
           CUDA_COMPILE_TESTS: "1"
           EVALUATION_DOCKER_TESTS: "1"
-        run: python -m pytest tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py
+        run: python -m pytest tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_dispatch_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py
       - name: Write persistent artifact
         run: |
           docker compose exec -T coordinator python -c 'from compiler_optimizer.storage import Repository; Repository("/var/lib/compiler-optimizer").artifacts.put(b"compose-persistence-check")'

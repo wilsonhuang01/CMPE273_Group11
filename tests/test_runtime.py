@@ -29,6 +29,7 @@ from compiler_optimizer.storage.errors import (
     NotFoundError,
     StateError,
 )
+from compiler_optimizer.workers.package import read_package
 
 
 def test_settings_keep_credentials_out_of_repr():
@@ -57,6 +58,9 @@ def test_settings_keep_credentials_out_of_repr():
         {"RABBITMQ_PASSWORD": ""},
         {"COORDINATOR_HEALTH_URL": "file:///etc/passwd"},
         {"COORDINATOR_HEALTH_URL": "http://user:secret@host/readyz"},
+        {"EXECUTION_ENABLED": "yes"},
+        {"EXECUTION_ENABLED": "true"},
+        {"GRPC_HOST": ""},
     ],
 )
 def test_settings_reject_invalid_environment(env):
@@ -155,6 +159,7 @@ def test_intake_maps_storage_failures_to_rpc_status(failure, code):
 def test_grpc_intake_commits_before_receipt_and_deduplicates(tmp_path):
     repo = Repository(tmp_path)
     manifest_path = Path(__file__).resolve().parents[1] / "examples/sum-array/submission.json"
+    package = read_package(manifest_path.parent)
     request = pb.Submission(
         meta=pb.Metadata(
             schema_version=1,
@@ -163,8 +168,8 @@ def test_grpc_intake_commits_before_receipt_and_deduplicates(tmp_path):
             created_at_unix_ms=time.time_ns() // 1_000_000,
         ),
         manifest=parse_manifest(manifest_path.read_bytes()),
-        package=repo.artifacts.put(b"test-package"),
-        source=pb.SourceVersion(version=1, bundle=repo.artifacts.put(b"test-source")),
+        package=repo.artifacts.put(package.package_bundle),
+        source=pb.SourceVersion(version=1, bundle=repo.artifacts.put(package.source_bundle)),
         compiler=pb.CompilerSettings(
             executable="clang",
             version="18.1.8",
@@ -191,6 +196,7 @@ def test_grpc_intake_commits_before_receipt_and_deduplicates(tmp_path):
                     == request.meta.message_id
                 )
                 assert len(repo.list_tasks()) == 1
+                assert repo.pending_executions() == [request.meta.task_id]
                 request.meta.schema_version = 2
                 with pytest.raises(grpc.RpcError) as error:
                     client.SubmitSubmission(request, timeout=3)

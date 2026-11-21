@@ -22,7 +22,9 @@ class Settings:
     health_host: str = "0.0.0.0"
     health_port: int = 8080
     grpc_port: int = 50051
+    grpc_host: str = "127.0.0.1"
     probe_interval_seconds: int = 5
+    execution_enabled: bool = True
 
     @classmethod
     def from_env(cls, role: str, environ=None):
@@ -56,9 +58,15 @@ class Settings:
             "redis_host": env.get("REDIS_HOST", "localhost"),
             "redis_password": env.get("REDIS_PASSWORD", "redis-dev-password"),
             "health_host": env.get("HEALTH_HOST", "0.0.0.0"),
+            "grpc_host": env.get("GRPC_HOST", "127.0.0.1"),
         }
         if any(not value for value in values.values()):
             raise ValueError("service hosts, credentials, and virtual host must be nonempty")
+        execution = env.get("EXECUTION_ENABLED", "true" if role == "coordinator" else "false")
+        if execution not in {"true", "false"}:
+            raise ValueError("EXECUTION_ENABLED must be true or false")
+        if execution == "true" and role != "coordinator":
+            raise ValueError("automatic execution requires the coordinator role")
         return cls(
             role=role,
             **values,
@@ -69,4 +77,5 @@ class Settings:
             probe_interval_seconds=number("PROBE_INTERVAL_SECONDS", 5, 60),
             coordinator_health_url=url,
             state_directory=Path(env.get("STATE_DIRECTORY", "var")),
+            execution_enabled=execution == "true",
         )

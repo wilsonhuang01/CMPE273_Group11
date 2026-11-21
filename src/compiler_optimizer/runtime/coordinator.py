@@ -1,4 +1,4 @@
-"""Durable coordinator intake RPCs; execution orchestration comes later."""
+"""Durable coordinator intake, automatic execution scheduling and result RPCs."""
 
 import json
 import logging
@@ -11,6 +11,7 @@ import grpc
 from compiler_optimizer.shared.manifest import ContractError
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.shared.v1 import contracts_pb2_grpc as rpc
+from compiler_optimizer.shared.workflow import default_workflow, validate_workflow
 from compiler_optimizer.storage.errors import (
     ArtifactError,
     ConflictError,
@@ -20,8 +21,14 @@ from compiler_optimizer.storage.errors import (
 
 
 class CoordinatorService(rpc.CoordinatorServiceServicer):
-    def __init__(self, repository):
+    def __init__(self, repository, *, execution_enabled=True, workflow_configuration=None):
         self.repository = repository
+        self.workflow_configuration = None
+        if execution_enabled:
+            config = (
+                default_workflow() if workflow_configuration is None else workflow_configuration
+            )
+            self.workflow_configuration = json.loads(validate_workflow(config))
 
     def _accept(self, request, context, save):
         try:
@@ -54,7 +61,13 @@ class CoordinatorService(rpc.CoordinatorServiceServicer):
         )
 
     def SubmitSubmission(self, request, context):
-        return self._accept(request, context, self.repository.save_submission)
+        return self._accept(
+            request,
+            context,
+            lambda message: self.repository.save_submission(
+                message, execution=self.workflow_configuration
+            ),
+        )
 
     def SubmitProposal(self, request, context):
         return self._accept(request, context, self.repository.save_proposal)
@@ -68,6 +81,7 @@ class CoordinatorService(rpc.CoordinatorServiceServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "task_id must be a canonical UUID")
         try:
             task = self.repository.get_task(request.task_id)
+            execution = self.repository.get_execution(request.task_id)
             pipeline = self.repository.get_pipeline(request.task_id)
             cached = self.repository.pipeline_report(request.task_id)
             selection = self.repository.get_selection_session(request.task_id)
@@ -82,6 +96,8 @@ class CoordinatorService(rpc.CoordinatorServiceServicer):
                 result.stage = (
                     "completed" if selection["outcome_key"] is not None else "collecting_candidates"
                 )
+            if execution is not None:
+                result.stage = execution["stage"]
             if cached is not None:
                 result.report.CopyFrom(cached[0])
                 result.report_json = json.dumps(cached[1], sort_keys=True)
@@ -100,6 +116,11 @@ class CoordinatorService(rpc.CoordinatorServiceServicer):
                     "status": task["status"],
                     "stage": result.stage,
                 }
+                if execution is not None:
+                    summary["execution"] = {
+                        key: execution[key]
+                        for key in ("attempts", "available_at_ms", "error_code", "finished")
+                    }
                 if pipeline is not None:
                     summary["proposal_id"] = pipeline["proposal_id"]
                 else:

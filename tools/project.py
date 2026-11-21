@@ -140,7 +140,7 @@ def package(destination, evidence):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", choices=("up", "down", "status", "demo", "evaluate", "test", "package")
+        "command", choices=("up", "down", "status", "serve", "demo", "evaluate", "test", "package")
     )
     parser.add_argument(
         "--no-start", action="store_true", help="Reuse a running stack and built native image"
@@ -151,7 +151,7 @@ def main():
     args = parser.parse_args()
     env = environment()
     os.environ.update(env)
-    if args.command in ("up", "demo", "evaluate") and not args.no_start:
+    if args.command in ("up", "serve", "demo", "evaluate") and not args.no_start:
         startup(env)
     if args.command in ("demo", "evaluate"):
         options = [sys.executable, "-m", "compiler_optimizer.evaluation", args.command]
@@ -160,6 +160,17 @@ def main():
         if args.command == "evaluate":
             options += ["--trials", str(args.trials)]
         command(options, env)
+    elif args.command == "serve":
+        env.setdefault("STATE_DIRECTORY", "var/service")
+        env.setdefault("GRPC_PORT", "50052")
+        env.setdefault("HEALTH_PORT", "18083")
+        env.setdefault("HEALTH_HOST", "127.0.0.1")
+        env["EXECUTION_ENABLED"] = "true"
+        os.execvpe(
+            sys.executable,
+            [sys.executable, "-m", "compiler_optimizer.runtime", "--role", "coordinator"],
+            env,
+        )
     elif args.command == "down":
         command(["docker", "compose", "down"], env)  # Volumes and evidence are preserved.
     elif args.command == "status":

@@ -11,6 +11,9 @@ The recommended entry point is `./project up`. It creates the local Python envir
 starts and checks the stack, and builds the native CPU toolchain. `./project status`
 checks readiness and monitoring. Both commands load literal settings from `.env`;
 see [Evaluation and release](evaluation.md) for demo and packaging commands.
+For automatic RPC execution, use [the host coordinator](automatic-execution.md)
+with `./project serve`. The Compose coordinator explicitly uses
+`EXECUTION_ENABLED=false`; its container has no Docker execution access.
 Low-level commands to start just the infrastructure (without building a compiler
 profile) are:
 

@@ -86,3 +86,6 @@ compatibility and resumption. Their version numbers record migration history.
 The recorded release archives and benchmark
 snapshots are immutable historical evidence; this documentation describes the
 current source tree and may include corrections made after those archives.
+
+[Automatic submission execution](automatic-execution.md) describes `./project serve`,
+durable RPC dispatch, restart recovery and the host coordinator's separate state.
