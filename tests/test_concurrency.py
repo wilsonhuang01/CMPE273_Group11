@@ -23,8 +23,8 @@ def telemetry(cpus=4, memory_mib=4096):
     return json.dumps({"docker_engine": {"cpus": cpus, "memory_bytes": memory_mib * 1024**2}})
 
 
-def concurrent_setup(tmp_path):
-    values = setup(tmp_path)
+def concurrent_setup(tmp_path, **kwargs):
+    values = setup(tmp_path, **kwargs)
     for runner in values[1:3]:
         runner.hardware = telemetry()
     return values
@@ -399,3 +399,25 @@ def test_sequential_cancellation_during_verification_does_not_start_measurement(
     assert report["status"] == "cancelled"
     assert not repo.list_benchmarks(task)
     assert repo.get_decision(task) is None
+
+
+@pytest.mark.parametrize("failure", ["infrastructure", "crash"])
+def test_single_candidate_keeps_canonical_recovery_history_with_spare_capacity(tmp_path, failure):
+    values = concurrent_setup(
+        tmp_path, infra=int(failure == "infrastructure"), crash=failure == "crash"
+    )
+    repo, _, _, task, _, _, coordinator, _ = values
+    audit = coordinator.run(task, agents=["performance"])
+    proposal = repo.list_proposals(task)[0]
+    job = repo.get_recovery_job(task, proposal.proposal_id)
+    assert job is not None
+    attempts = repo.recovery_attempts(task, proposal.proposal_id)
+    if failure == "infrastructure":
+        assert [a["status"] for a in attempts] == ["infrastructure_failure", "completed"]
+        assert audit["status"] == "selected"
+    else:
+        assert job["state"] == "quarantined"
+        assert [a["status"] for a in attempts] == ["program_crash", "quarantined"]
+        assert audit["status"] == "retained_baseline"
+    assert repo.cohort_work(task)["workers"] == 1
+    assert len(repo.recovery_jobs(task)) == 1

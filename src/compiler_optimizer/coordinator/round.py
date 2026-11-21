@@ -203,6 +203,9 @@ class CohortCoordinator:
         self._reservation_mib = reservation_mib(manifest)
         capacity = runner_capacity(self.runner)
         count = capacity.workers(self._reservation_mib, self.concurrency) if capacity else 1
+        # Spare engine capacity must not split a single candidate's recovery
+        # history between preparation and evaluation scopes.
+        count = min(count, len(session["members"]))
         if self.recovery is not None:
             count = min(count, len(self.recovery.workers))
         work = repository.begin_cohort_work(task_id, count, self._reservation_mib)
