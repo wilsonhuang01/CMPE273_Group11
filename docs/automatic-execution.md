@@ -76,8 +76,9 @@ orchestrator holds the state lock, dispatch waits without consuming an attempt.
 
 The direct runtime command also enables automatic dispatch by default for the
 coordinator role. `EXECUTION_ENABLED=false` disables dispatch; `TRANSFER_ENABLED=false` disables upload/download.
-The other service roles remain infrastructure-only. Independent remote workers,
-parallel dispatch and model backends remain separate work.
+The [scheduler and worker roles](autonomous-workers.md) now support independent
+execution services with `EXECUTION_BACKEND=remote`. The default Compose deployment
+keeps infrastructure-only mode. Parallel dispatch and model backends remain separate work.
 
 ## Validation
 

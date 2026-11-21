@@ -1,13 +1,15 @@
-"""Sequential durable submission execution on a trusted, Docker-capable coordinator host."""
+"""Durable submission orchestration with local or independent sandbox executors."""
 
 import json
 import logging
 import re
+import time
 
 from compiler_optimizer.coordinator.round import CohortCoordinator
 from compiler_optimizer.monitoring.watchdog import read_json, remove_owned
 from compiler_optimizer.runtime.proposal_queue import RabbitProposalQueue
-from compiler_optimizer.scheduler.recovery import RecoveryController
+from compiler_optimizer.scheduler.blacklist import RedisBlacklist
+from compiler_optimizer.scheduler.recovery import RecoveryController, Worker
 from compiler_optimizer.shared.benchmarking import BenchmarkPlan
 from compiler_optimizer.shared.manifest import ContractError, require
 from compiler_optimizer.shared.recovery import RecoveryPolicy
@@ -16,6 +18,7 @@ from compiler_optimizer.storage.errors import ArtifactError, StateError
 from compiler_optimizer.workers.baseline import run_baseline
 from compiler_optimizer.workers.docker_runner import DockerRunner, InfrastructureError
 from compiler_optimizer.workers.package import package_from_files, unbundle
+from compiler_optimizer.workers.remote import RemoteRunner, matching_workers
 from compiler_optimizer.workers.targets import DEFAULT_IMAGES
 from compiler_optimizer.workers.verification_plan import VerificationPlan
 
@@ -33,17 +36,42 @@ class SubmissionDispatcher:
         self.repository, self.settings = repository, settings
         self.runner_factory = runner_factory or self._runner
         self.broker_factory = broker_factory or (lambda: RabbitProposalQueue(settings))
-        self.recovery_factory = recovery_factory or (
-            lambda runner, policy: RecoveryController.local(
-                repository,
-                runner,
-                settings,
-                policy=policy,
-                watchdog_directory=runner.watchdog_directory,
+        self.recovery_factory = recovery_factory or self._recovery
+
+    def _recovery(self, runner, policy):
+        if isinstance(runner, RemoteRunner):
+            rows = matching_workers(
+                self.repository, self.repository.get_task(runner.task_id)["submission"].compiler
             )
+            if not rows:
+                raise InfrastructureError("no healthy remote recovery workers")
+            known = {row["worker_id"]: row for row in self.repository.recovery_workers()}
+            workers = [
+                Worker(
+                    runner=RemoteRunner(self.repository, runner.task_id, row),
+                    worker_id=row["worker_id"],
+                    incarnation_id=row["incarnation_id"],
+                    sequence=known.get(row["worker_id"], {}).get("sequence", 0),
+                )
+                for row in rows[:8]
+            ]
+            return RecoveryController(
+                self.repository, workers, RedisBlacklist.from_settings(self.settings), policy=policy
+            )
+        return RecoveryController.local(
+            self.repository,
+            runner,
+            self.settings,
+            policy=policy,
+            watchdog_directory=runner.watchdog_directory,
         )
 
     def _runner(self, submission):
+        if self.settings.execution_backend == "remote":
+            rows = matching_workers(self.repository, submission.compiler)
+            if not rows:
+                raise InfrastructureError("no healthy remote compiler worker")
+            return RemoteRunner(self.repository, submission.meta.task_id, rows[0])
         # A client cannot select an arbitrary installed image for trusted execution.
         runner = DockerRunner(
             DEFAULT_IMAGES[submission.compiler.target],
@@ -61,6 +89,13 @@ class SubmissionDispatcher:
 
     def _cleanup(self, task_id):
         """Confirm removal of a previous owner's sandboxes before resuming its work."""
+        if self.settings.execution_backend == "remote":
+            deadline = time.monotonic() + 5
+            while not self.repository.cancel_fleet_task(task_id):
+                if time.monotonic() >= deadline:
+                    raise InfrastructureError("remote sandbox cleanup is unconfirmed")
+                time.sleep(0.1)
+            return
         for path in self.watchdogs(task_id).glob("*/lease.json"):
             status = path.with_name("status.json")
             if status.exists() and read_json(status).get("state") == "removed":
@@ -80,7 +115,14 @@ class SubmissionDispatcher:
         repo = self.repository
         try:
             with repo.pipeline_lock():
-                pending = repo.pending_executions()
+                pending = [
+                    task_id
+                    for task_id in repo.pending_executions()
+                    if repo.get_execution(task_id)["configuration"].get(
+                        "execution_backend", "local"
+                    )
+                    == self.settings.execution_backend
+                ]
                 if not pending or (stop is not None and stop.is_set()):
                     return False
                 task_id = pending[0]

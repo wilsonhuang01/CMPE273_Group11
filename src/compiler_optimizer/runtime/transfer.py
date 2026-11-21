@@ -38,7 +38,7 @@ from compiler_optimizer.workers.targets import DEFAULT_IMAGES
 def transfer_errors(context):
     try:
         yield
-    except (ContractError, ValueError):
+    except (ContractError, ValueError, KeyError, TypeError):
         context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid transfer request or package")
     except PermissionError:
         context.abort(grpc.StatusCode.PERMISSION_DENIED, "artifact is not registered to this task")

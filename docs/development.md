@@ -77,8 +77,11 @@ backend, scoped RabbitMQ delivery, verification, benchmarking and coordinator re
 The [specialized agents](specialized-agents.md) add Memory/Architecture generation,
 Correctness/Critic reviews and Benchmark measurement work with durable budgets.
 [Fault recovery](fault-recovery.md) implements local worker heartbeats, leases,
-bounded retries, broker recovery and scoped crash blacklisting. Remote worker
-dispatch across multiple hosts remains outside the implementation.
+bounded retries, broker recovery and scoped crash blacklisting.
+[Autonomous workers](autonomous-workers.md) add independent scheduler/executor
+processes, RPC leases, artifact transfer and fenced results. Recovery after process
+loss requires a healthy executor on the same Docker engine to confirm cleanup;
+unreachable physical-host recovery remains deployment work.
 The [selection coordinator](coordinator-selection.md) collects frozen cohorts,
 enforces review votes and weighted confidence gates, and atomically audits decisions.
 CMake builds trusted repository examples; it is not the submission build interface.

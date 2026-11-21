@@ -20,7 +20,9 @@ def validate_rpc_security(settings):
     if bool(settings.rpc_tls_cert) != bool(settings.rpc_tls_key):
         raise ValueError("RPC_TLS_CERT and RPC_TLS_KEY must be configured together")
     validate_token(settings.api_token)
-    if settings.role == "coordinator" and (settings.transfer_enabled or settings.execution_enabled):
+    if settings.role == "coordinator" and (
+        settings.transfer_enabled or settings.execution_enabled or settings.fleet_enabled
+    ):
         if not is_loopback(settings.grpc_host) and not (
             settings.api_token and settings.rpc_tls_cert and settings.rpc_tls_key
         ):

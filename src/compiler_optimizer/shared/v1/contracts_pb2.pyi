@@ -406,3 +406,125 @@ class ArtifactChunk(_message.Message):
     offset: int
     data: bytes
     def __init__(self, offset: _Optional[int] = ..., data: _Optional[bytes] = ...) -> None: ...
+
+class FleetIdentity(_message.Message):
+    __slots__ = ("worker_id", "incarnation_id", "secret")
+    WORKER_ID_FIELD_NUMBER: _ClassVar[int]
+    INCARNATION_ID_FIELD_NUMBER: _ClassVar[int]
+    SECRET_FIELD_NUMBER: _ClassVar[int]
+    worker_id: str
+    incarnation_id: str
+    secret: str
+    def __init__(self, worker_id: _Optional[str] = ..., incarnation_id: _Optional[str] = ..., secret: _Optional[str] = ...) -> None: ...
+
+class FleetRegistration(_message.Message):
+    __slots__ = ("identity", "profile_json")
+    IDENTITY_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_JSON_FIELD_NUMBER: _ClassVar[int]
+    identity: FleetIdentity
+    profile_json: str
+    def __init__(self, identity: _Optional[_Union[FleetIdentity, _Mapping]] = ..., profile_json: _Optional[str] = ...) -> None: ...
+
+class FleetAck(_message.Message):
+    __slots__ = ("accepted",)
+    ACCEPTED_FIELD_NUMBER: _ClassVar[int]
+    accepted: bool
+    def __init__(self, accepted: bool = ...) -> None: ...
+
+class FleetLease(_message.Message):
+    __slots__ = ("job_id", "token", "fence", "expires_ms", "deadline_ms")
+    JOB_ID_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_FIELD_NUMBER: _ClassVar[int]
+    FENCE_FIELD_NUMBER: _ClassVar[int]
+    EXPIRES_MS_FIELD_NUMBER: _ClassVar[int]
+    DEADLINE_MS_FIELD_NUMBER: _ClassVar[int]
+    job_id: str
+    token: str
+    fence: int
+    expires_ms: int
+    deadline_ms: int
+    def __init__(self, job_id: _Optional[str] = ..., token: _Optional[str] = ..., fence: _Optional[int] = ..., expires_ms: _Optional[int] = ..., deadline_ms: _Optional[int] = ...) -> None: ...
+
+class FleetHeartbeat(_message.Message):
+    __slots__ = ("identity", "sequence", "active")
+    IDENTITY_FIELD_NUMBER: _ClassVar[int]
+    SEQUENCE_FIELD_NUMBER: _ClassVar[int]
+    ACTIVE_FIELD_NUMBER: _ClassVar[int]
+    identity: FleetIdentity
+    sequence: int
+    active: FleetLease
+    def __init__(self, identity: _Optional[_Union[FleetIdentity, _Mapping]] = ..., sequence: _Optional[int] = ..., active: _Optional[_Union[FleetLease, _Mapping]] = ...) -> None: ...
+
+class FleetPulse(_message.Message):
+    __slots__ = ("lease_valid", "cleanup")
+    LEASE_VALID_FIELD_NUMBER: _ClassVar[int]
+    CLEANUP_FIELD_NUMBER: _ClassVar[int]
+    lease_valid: bool
+    cleanup: _containers.RepeatedCompositeFieldContainer[FleetLease]
+    def __init__(self, lease_valid: bool = ..., cleanup: _Optional[_Iterable[_Union[FleetLease, _Mapping]]] = ...) -> None: ...
+
+class FleetScheduleRequest(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class FleetDispatch(_message.Message):
+    __slots__ = ("job_id", "worker_id", "fence")
+    JOB_ID_FIELD_NUMBER: _ClassVar[int]
+    WORKER_ID_FIELD_NUMBER: _ClassVar[int]
+    FENCE_FIELD_NUMBER: _ClassVar[int]
+    job_id: str
+    worker_id: str
+    fence: int
+    def __init__(self, job_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., fence: _Optional[int] = ...) -> None: ...
+
+class FleetDispatches(_message.Message):
+    __slots__ = ("jobs",)
+    JOBS_FIELD_NUMBER: _ClassVar[int]
+    jobs: _containers.RepeatedCompositeFieldContainer[FleetDispatch]
+    def __init__(self, jobs: _Optional[_Iterable[_Union[FleetDispatch, _Mapping]]] = ...) -> None: ...
+
+class FleetClaim(_message.Message):
+    __slots__ = ("identity", "dispatch")
+    IDENTITY_FIELD_NUMBER: _ClassVar[int]
+    DISPATCH_FIELD_NUMBER: _ClassVar[int]
+    identity: FleetIdentity
+    dispatch: FleetDispatch
+    def __init__(self, identity: _Optional[_Union[FleetIdentity, _Mapping]] = ..., dispatch: _Optional[_Union[FleetDispatch, _Mapping]] = ...) -> None: ...
+
+class FleetAssignment(_message.Message):
+    __slots__ = ("accepted", "lease", "task_id", "input")
+    ACCEPTED_FIELD_NUMBER: _ClassVar[int]
+    LEASE_FIELD_NUMBER: _ClassVar[int]
+    TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    INPUT_FIELD_NUMBER: _ClassVar[int]
+    accepted: bool
+    lease: FleetLease
+    task_id: str
+    input: ArtifactRef
+    def __init__(self, accepted: bool = ..., lease: _Optional[_Union[FleetLease, _Mapping]] = ..., task_id: _Optional[str] = ..., input: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+
+class FleetAuthority(_message.Message):
+    __slots__ = ("identity", "lease")
+    IDENTITY_FIELD_NUMBER: _ClassVar[int]
+    LEASE_FIELD_NUMBER: _ClassVar[int]
+    identity: FleetIdentity
+    lease: FleetLease
+    def __init__(self, identity: _Optional[_Union[FleetIdentity, _Mapping]] = ..., lease: _Optional[_Union[FleetLease, _Mapping]] = ...) -> None: ...
+
+class FleetResultHeader(_message.Message):
+    __slots__ = ("identity", "lease", "artifact")
+    IDENTITY_FIELD_NUMBER: _ClassVar[int]
+    LEASE_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACT_FIELD_NUMBER: _ClassVar[int]
+    identity: FleetIdentity
+    lease: FleetLease
+    artifact: ArtifactRef
+    def __init__(self, identity: _Optional[_Union[FleetIdentity, _Mapping]] = ..., lease: _Optional[_Union[FleetLease, _Mapping]] = ..., artifact: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+
+class FleetResultFrame(_message.Message):
+    __slots__ = ("header", "data")
+    HEADER_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    header: FleetResultHeader
+    data: bytes
+    def __init__(self, header: _Optional[_Union[FleetResultHeader, _Mapping]] = ..., data: _Optional[bytes] = ...) -> None: ...

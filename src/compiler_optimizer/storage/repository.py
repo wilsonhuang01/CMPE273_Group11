@@ -23,6 +23,7 @@ from compiler_optimizer.shared.workflow import validate_workflow
 from compiler_optimizer.storage.artifacts import ArtifactStore
 from compiler_optimizer.storage.errors import ConflictError, NotFoundError, StateError
 from compiler_optimizer.storage.execution import ExecutionStorage
+from compiler_optimizer.storage.fleet import FleetStorage
 from compiler_optimizer.storage.pipeline import PipelineStorage
 from compiler_optimizer.storage.recovery import RecoveryStorage
 from compiler_optimizer.storage.selection import SelectionStorage
@@ -32,7 +33,13 @@ def _now() -> int:
     return time.time_ns() // 1_000_000
 
 
-class Repository(PipelineStorage, SelectionStorage, RecoveryStorage, ExecutionStorage):
+class Repository(
+    PipelineStorage,
+    SelectionStorage,
+    RecoveryStorage,
+    ExecutionStorage,
+    FleetStorage,
+):
     """Use one instance per service; operations open their own SQLite connection.
 
     All processes accessing this directory must be on the same host. This class
@@ -60,6 +67,7 @@ class Repository(PipelineStorage, SelectionStorage, RecoveryStorage, ExecutionSt
                 (5, "selection.sql"),
                 (6, "recovery.sql"),
                 (7, "execution.sql"),
+                (8, "fleet.sql"),
             ):
                 if version == target - 1:
                     schema = files("compiler_optimizer.storage").joinpath(name).read_text()
@@ -68,7 +76,7 @@ class Repository(PipelineStorage, SelectionStorage, RecoveryStorage, ExecutionSt
                             db.execute(statement)
                     db.execute(f"PRAGMA user_version = {target}")
                     version = target
-            if version != 7:
+            if version != 8:
                 raise StateError(f"unsupported database schema version: {version}")
 
     @contextmanager

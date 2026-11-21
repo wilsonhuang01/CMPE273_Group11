@@ -18,16 +18,20 @@ print(repo.list_tasks(status="accepted"))
 
 This creates `var/state.sqlite3` and `var/artifacts/`. `var/` is ignored by Git.
 Constructing a new repository for the same directory reopens its state. SQL schema
-version 7 is tracked with SQLite `user_version`. The initial `storage/schema.sql`
+version 8 is tracked with SQLite `user_version`. The initial `storage/schema.sql`
 and additive `storage/benchmark.sql`, `storage/pipeline.sql` and `storage/agents.sql`
-migrations plus `storage/selection.sql`, `storage/recovery.sql` and `storage/execution.sql`
-ship with the application; version 1–6
+migrations plus `storage/selection.sql`, `storage/recovery.sql`, `storage/execution.sql`
+and `storage/fleet.sql` ship with the application; version 1–7
 data migrates transactionally.
 
 Schema v7 adds `submission_executions`, the automatic dispatch queue and frozen
 operator configuration. RPC intake commits its row atomically with the task.
 The local pipeline lock serializes dispatch; committed baseline/cohort evidence
 provides restart checkpoints. See [automatic execution](automatic-execution.md).
+Schema v8 adds the fleet registry and primitive work queue. Capability profiles,
+incarnations, hashed worker credentials, job/parent leases, result references and
+cleanup state remain coordinator-owned. Independent workers exchange artifacts
+and fenced results over RPC; they never open coordinator database files.
 Unknown database versions are rejected without deleting or replacing existing data.
 Future migrations must run transactionally; there is no automatic downgrade.
 

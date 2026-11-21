@@ -265,3 +265,72 @@ service ArtifactTransferService {
   rpc ListArtifacts(OptimizationQuery) returns (TaskArtifacts);
   rpc DownloadArtifact(ArtifactRequest) returns (stream ArtifactChunk);
 }
+
+message FleetIdentity {
+  string worker_id = 1;
+  string incarnation_id = 2;
+  string secret = 3;
+}
+message FleetRegistration {
+  FleetIdentity identity = 1;
+  string profile_json = 2;
+}
+message FleetAck { bool accepted = 1; }
+message FleetLease {
+  string job_id = 1;
+  string token = 2;
+  uint64 fence = 3;
+  int64 expires_ms = 4;
+  int64 deadline_ms = 5;
+}
+message FleetHeartbeat {
+  FleetIdentity identity = 1;
+  uint64 sequence = 2;
+  optional FleetLease active = 3;
+}
+message FleetPulse {
+  bool lease_valid = 1;
+  repeated FleetLease cleanup = 2;
+}
+message FleetScheduleRequest {}
+message FleetDispatch {
+  string job_id = 1;
+  string worker_id = 2;
+  uint64 fence = 3;
+}
+message FleetDispatches { repeated FleetDispatch jobs = 1; }
+message FleetClaim {
+  FleetIdentity identity = 1;
+  FleetDispatch dispatch = 2;
+}
+message FleetAssignment {
+  bool accepted = 1;
+  FleetLease lease = 2;
+  string task_id = 3;
+  ArtifactRef input = 4;
+}
+message FleetAuthority {
+  FleetIdentity identity = 1;
+  FleetLease lease = 2;
+}
+message FleetResultHeader {
+  FleetIdentity identity = 1;
+  FleetLease lease = 2;
+  ArtifactRef artifact = 3;
+}
+message FleetResultFrame {
+  oneof frame {
+    FleetResultHeader header = 1;
+    bytes data = 2;
+  }
+}
+service FleetService {
+  rpc Ping(FleetScheduleRequest) returns (FleetAck);
+  rpc Register(FleetRegistration) returns (FleetAck);
+  rpc Heartbeat(FleetHeartbeat) returns (FleetPulse);
+  rpc Schedule(FleetScheduleRequest) returns (FleetDispatches);
+  rpc Claim(FleetClaim) returns (FleetAssignment);
+  rpc CheckLease(FleetAuthority) returns (FleetAck);
+  rpc UploadResult(stream FleetResultFrame) returns (FleetAck);
+  rpc ConfirmCleanup(FleetAuthority) returns (FleetAck);
+}

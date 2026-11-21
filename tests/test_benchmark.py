@@ -309,6 +309,6 @@ def test_schema_one_migrates_without_losing_data(tmp_path):
     Repository(root)
     Repository(root)
     with sqlite3.connect(root / "state.sqlite3") as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
         assert db.execute("SELECT revision FROM tasks WHERE task_id='old'").fetchone()[0] == 7
         assert db.execute("SELECT COUNT(*) FROM benchmark_runs").fetchone()[0] == 0

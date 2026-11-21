@@ -28,6 +28,10 @@ restarts. See [automatic submission execution](docs/automatic-execution.md) for
 submission examples, status, retry limits and the distinction from Compose intake.
 Clients can [upload packages and download selected source and evidence](docs/artifact-transfer.md)
 using `./project client`, without sharing the coordinator's filesystem.
+The [autonomous worker guide](docs/autonomous-workers.md) describes
+`EXECUTION_BACKEND=remote`, `./project scheduler` and independent `./project worker`
+processes. The coordinator keeps durable state and acceptance checks; trusted
+workers own Docker execution and return fenced results over RPC.
 
 ## Initial implementation scope
 

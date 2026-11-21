@@ -12,6 +12,7 @@ from compiler_optimizer.workers.verification_plan import VerificationPlan
 def default_workflow():
     return {
         "schema_version": 1,
+        "execution_backend": "local",
         "agents": ["performance", "memory", "architecture"],
         "verification_plan": json.loads(VerificationPlan().encode()),
         "benchmark_plan": json.loads(BenchmarkPlan().encode()),
@@ -23,7 +24,14 @@ def default_workflow():
 
 
 def validate_workflow(value):
-    require(isinstance(value, dict) and set(value) == set(default_workflow()), "invalid workflow")
+    expected = set(default_workflow())
+    require(
+        isinstance(value, dict) and set(value) in (expected, expected - {"execution_backend"}),
+        "invalid workflow",
+    )
+    require(
+        value.get("execution_backend", "local") in {"local", "remote"}, "invalid execution backend"
+    )
     require(
         type(value["schema_version"]) is int and value["schema_version"] == 1, "workflow version"
     )

@@ -15,13 +15,19 @@ from compiler_optimizer.runtime.config import Settings
 from compiler_optimizer.runtime.coordinator import CoordinatorService
 from compiler_optimizer.runtime.dependencies import check_coordinator, check_rabbitmq, check_redis
 from compiler_optimizer.runtime.dispatch import SubmissionDispatcher
+from compiler_optimizer.runtime.fleet import FleetService
+from compiler_optimizer.runtime.fleet_client import check_fleet
 from compiler_optimizer.runtime.health import Readiness, health_server
 from compiler_optimizer.runtime.security import BearerAuth, validate_rpc_security
 from compiler_optimizer.runtime.transfer import ArtifactTransferService
 from compiler_optimizer.runtime.worker_health import WorkerHealthService
+from compiler_optimizer.scheduler.fleet import run_scheduler
 from compiler_optimizer.shared.contracts import MAX_MESSAGE_BYTES
 from compiler_optimizer.shared.v1 import contracts_pb2_grpc as rpc
+from compiler_optimizer.shared.workflow import default_workflow
 from compiler_optimizer.storage import Repository
+from compiler_optimizer.workers.fleet import run_worker
+from compiler_optimizer.workers.remote import fleet_compiler
 
 
 def run(settings):
@@ -50,12 +56,30 @@ def run(settings):
                 ("grpc.max_send_message_length", MAX_MESSAGE_BYTES),
             ],
         )
-        coordinator = CoordinatorService(repository, execution_enabled=settings.execution_enabled)
+        coordinator = CoordinatorService(
+            repository,
+            execution_enabled=settings.execution_enabled,
+            workflow_configuration={
+                **default_workflow(),
+                "execution_backend": settings.execution_backend,
+            },
+        )
         rpc.add_CoordinatorServiceServicer_to_server(coordinator, grpc_server)
         if settings.transfer_enabled:
             rpc.add_ArtifactTransferServiceServicer_to_server(
-                ArtifactTransferService(repository, coordinator), grpc_server
+                ArtifactTransferService(
+                    repository,
+                    coordinator,
+                    compiler_resolver=(
+                        lambda target, language: fleet_compiler(repository, target, language)
+                    )
+                    if settings.execution_backend == "remote"
+                    else None,
+                ),
+                grpc_server,
             )
+        if settings.fleet_enabled:
+            rpc.add_FleetServiceServicer_to_server(FleetService(repository), grpc_server)
         if settings.execution_enabled:
             dispatcher = SubmissionDispatcher(repository, settings)
         rpc.add_WorkerHealthServiceServicer_to_server(WorkerHealthService(repository), grpc_server)
@@ -74,16 +98,37 @@ def run(settings):
             raise RuntimeError("cannot bind coordinator gRPC port")
         grpc_server.start()
     else:
-        probes["coordinator"] = lambda: check_coordinator(settings)
+        if settings.service_enabled:
+            probes.pop("redis")
+            probes["coordinator"] = lambda: check_fleet(settings)
+        else:
+            probes["coordinator"] = lambda: check_coordinator(settings)
 
     server = None
     threads = []
     try:
+        component = None
+        capabilities = None
+        worker_enabled = settings.role == "worker" and settings.service_enabled
+        if settings.role != "coordinator" and settings.service_enabled:
+            ready = threading.Event()
+
+            def check_component():
+                if not ready.is_set():
+                    raise RuntimeError("service loop is not ready")
+
+            probes["service_loop"] = check_component
+            action = run_worker if worker_enabled else run_scheduler
+            component = threading.Thread(target=action, args=(settings, stop, ready), daemon=True)
+            capabilities = (
+                ["sandbox_worker_execution"] if worker_enabled else ["durable_worker_dispatch"]
+            )
         state = Readiness(
             settings.role,
             probes,
             interval=settings.probe_interval_seconds,
-            execution_enabled=dispatcher is not None,
+            execution_enabled=dispatcher is not None or worker_enabled,
+            capabilities=capabilities,
         )
         server = health_server(
             (settings.health_host, settings.health_port),
@@ -96,6 +141,8 @@ def run(settings):
         ]
         if dispatcher is not None:
             threads.append(threading.Thread(target=dispatcher.run, args=(stop,), daemon=True))
+        if component is not None:
+            threads.append(component)
         for thread in threads:
             thread.start()
         logging.info(
@@ -103,7 +150,7 @@ def run(settings):
                 {
                     "event": "started",
                     "service": settings.role,
-                    "execution_enabled": dispatcher is not None,
+                    "execution_enabled": dispatcher is not None or worker_enabled,
                 }
             )
         )

@@ -141,7 +141,19 @@ def package(destination, evidence):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", choices=("up", "down", "status", "serve", "demo", "evaluate", "test", "package")
+        "command",
+        choices=(
+            "up",
+            "down",
+            "status",
+            "serve",
+            "scheduler",
+            "worker",
+            "demo",
+            "evaluate",
+            "test",
+            "package",
+        ),
     )
     parser.add_argument(
         "--no-start", action="store_true", help="Reuse a running stack and built native image"
@@ -161,15 +173,19 @@ def main():
         if args.command == "evaluate":
             options += ["--trials", str(args.trials)]
         command(options, env)
-    elif args.command == "serve":
+    elif args.command in ("serve", "scheduler", "worker"):
         env.setdefault("STATE_DIRECTORY", "var/service")
         env.setdefault("GRPC_PORT", "50052")
-        env.setdefault("HEALTH_PORT", "18083")
+        env.setdefault(
+            "HEALTH_PORT", {"serve": "18083", "scheduler": "18084", "worker": "18085"}[args.command]
+        )
         env.setdefault("HEALTH_HOST", "127.0.0.1")
-        env["EXECUTION_ENABLED"] = "true"
+        role = "coordinator" if args.command == "serve" else args.command
+        env["EXECUTION_ENABLED"] = "true" if role == "coordinator" else "false"
+        env["TRANSFER_ENABLED"] = "true" if role == "coordinator" else "false"
         os.execvpe(
             sys.executable,
-            [sys.executable, "-m", "compiler_optimizer.runtime", "--role", "coordinator"],
+            [sys.executable, "-m", "compiler_optimizer.runtime", "--role", role],
             env,
         )
     elif args.command == "down":

@@ -60,7 +60,7 @@ sets the overall polling budget; expiration leaves the accepted task running.
 ## Authentication and remote transport
 
 The development default binds gRPC and health endpoints to loopback. A host
-coordinator with execution or transfer enabled refuses a non-loopback gRPC bind
+coordinator with execution, transfer or fleet RPCs enabled refuses a non-loopback gRPC bind
 unless both TLS and bearer authentication are configured:
 
 ```sh
@@ -92,13 +92,14 @@ One shared operator token authorizes the deployment's task data. This is a trust
 team deployment, not per-user tenancy. Artifact downloads additionally require
 the exact key, SHA-256 and size to be registered to the requested task; possession
 of an unrelated CAS hash does not grant download access. Per-user task ownership,
-tenant quotas and worker-specific credentials remain separate service work.
+tenant quotas remain separate service work. The fleet adds per-incarnation
+credentials and assignment authority for worker control/result RPCs.
 
 Compose's legacy coordinator explicitly disables execution and transfer and
 publishes its intake port only on loopback. It does not become an upload server.
 Use the host endpoint on 50052 for these commands. Autonomous workers and their
-result-commit/upload protocols remain action C; the artifact catalog/download
-API provides their task-scoped read transport.
+result commits are implemented by [action C's fleet service](autonomous-workers.md),
+which uses this catalog/download API for task-scoped input transport.
 
 ## Wire and resource limits
 

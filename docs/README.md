@@ -51,16 +51,16 @@ AddressSanitizer test was skipped because this machine is ARM64. See
 
 ## Execution and deployment boundaries
 
-Optimization runs through the host CLI with Docker access and host-owned SQLite/CAS
-state. The Compose coordinator, scheduler and worker containers provide intake,
-health and infrastructure services; they do not execute submissions or mount the
-Docker socket. General job/result queues exist, but remote multi-host worker
-dispatch is not implemented. The cohort command enables local recovery; the older
+Optimization supports local host execution and [independent worker services](autonomous-workers.md).
+In remote mode only trusted workers need Docker; coordinator-owned SQLite/CAS
+state stays behind RPC and artifact transfer. The default Compose deployment
+retains intake/infrastructure mode without Docker socket mounts. Physical
+multi-host cleanup/recovery still needs a host supervisor. The cohort command enables local recovery; the older
 single-proposal pipeline and standalone worker commands do not use that controller.
 
 Still pending: NVIDIA GPU execution, GPU correctness/event timing and real device/
 host recovery operations; external inference-provider adapters and authentication;
-independent remote worker authentication and dispatch;
+production worker identity/authorization and physical host recovery;
 replicated storage, scheduled backups and automatic artifact retention; MLIR
 transformation integration. GPU quarantine/recovery decision rules are tested
 contracts, not validated hardware recovery.
@@ -91,3 +91,5 @@ current source tree and may include corrections made after those archives.
 durable RPC dispatch, restart recovery and the host coordinator's separate state.
 [Package and artifact transfer](artifact-transfer.md) covers `./project client`,
 streaming upload, task-scoped downloads and TLS/bearer authentication.
+[Autonomous workers](autonomous-workers.md) covers scheduler/worker commands,
+capability registration, durable job dispatch, execution leases and cleanup.

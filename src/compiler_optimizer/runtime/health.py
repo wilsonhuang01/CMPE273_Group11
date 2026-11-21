@@ -8,7 +8,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class Readiness:
-    def __init__(self, role, probes, *, interval=5, clock=time.monotonic, execution_enabled=False):
+    def __init__(
+        self,
+        role,
+        probes,
+        *,
+        interval=5,
+        clock=time.monotonic,
+        execution_enabled=False,
+        capabilities=None,
+    ):
         self.role = role
         self.probes = probes
         self.interval = interval
@@ -17,6 +26,7 @@ class Readiness:
         self._checks = {}
         self._checked = None
         self.execution_enabled = execution_enabled
+        self.capabilities = capabilities
 
     def probe_once(self):
         checks = {}
@@ -53,7 +63,9 @@ class Readiness:
             and fresh
             and all(value == "ok" for value in checks.values()),
             "execution_enabled": self.execution_enabled,
-            "capabilities": ["durable_intake", "automatic_submission_execution"]
+            "capabilities": self.capabilities
+            if self.capabilities is not None
+            else ["durable_intake", "automatic_submission_execution"]
             if self.execution_enabled
             else ["durable_intake"]
             if self.role == "coordinator"

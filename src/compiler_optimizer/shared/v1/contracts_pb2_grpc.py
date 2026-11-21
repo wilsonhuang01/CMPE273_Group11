@@ -483,3 +483,376 @@ class ArtifactTransferService(object):
             timeout,
             metadata,
             _registered_method=True)
+
+
+class FleetServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Ping = channel.unary_unary(
+                '/compiler_optimizer.v1.FleetService/Ping',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetScheduleRequest.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+                _registered_method=True)
+        self.Register = channel.unary_unary(
+                '/compiler_optimizer.v1.FleetService/Register',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetRegistration.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+                _registered_method=True)
+        self.Heartbeat = channel.unary_unary(
+                '/compiler_optimizer.v1.FleetService/Heartbeat',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetHeartbeat.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetPulse.FromString,
+                _registered_method=True)
+        self.Schedule = channel.unary_unary(
+                '/compiler_optimizer.v1.FleetService/Schedule',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetScheduleRequest.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetDispatches.FromString,
+                _registered_method=True)
+        self.Claim = channel.unary_unary(
+                '/compiler_optimizer.v1.FleetService/Claim',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetClaim.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAssignment.FromString,
+                _registered_method=True)
+        self.CheckLease = channel.unary_unary(
+                '/compiler_optimizer.v1.FleetService/CheckLease',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAuthority.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+                _registered_method=True)
+        self.UploadResult = channel.stream_unary(
+                '/compiler_optimizer.v1.FleetService/UploadResult',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetResultFrame.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+                _registered_method=True)
+        self.ConfirmCleanup = channel.unary_unary(
+                '/compiler_optimizer.v1.FleetService/ConfirmCleanup',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAuthority.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+                _registered_method=True)
+
+
+class FleetServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def Ping(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Register(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Heartbeat(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Schedule(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Claim(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CheckLease(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UploadResult(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ConfirmCleanup(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_FleetServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'Ping': grpc.unary_unary_rpc_method_handler(
+                    servicer.Ping,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetScheduleRequest.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.SerializeToString,
+            ),
+            'Register': grpc.unary_unary_rpc_method_handler(
+                    servicer.Register,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetRegistration.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.SerializeToString,
+            ),
+            'Heartbeat': grpc.unary_unary_rpc_method_handler(
+                    servicer.Heartbeat,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetHeartbeat.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetPulse.SerializeToString,
+            ),
+            'Schedule': grpc.unary_unary_rpc_method_handler(
+                    servicer.Schedule,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetScheduleRequest.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetDispatches.SerializeToString,
+            ),
+            'Claim': grpc.unary_unary_rpc_method_handler(
+                    servicer.Claim,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetClaim.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAssignment.SerializeToString,
+            ),
+            'CheckLease': grpc.unary_unary_rpc_method_handler(
+                    servicer.CheckLease,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAuthority.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.SerializeToString,
+            ),
+            'UploadResult': grpc.stream_unary_rpc_method_handler(
+                    servicer.UploadResult,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetResultFrame.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.SerializeToString,
+            ),
+            'ConfirmCleanup': grpc.unary_unary_rpc_method_handler(
+                    servicer.ConfirmCleanup,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAuthority.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'compiler_optimizer.v1.FleetService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('compiler_optimizer.v1.FleetService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class FleetService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def Ping(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.FleetService/Ping',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetScheduleRequest.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Register(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.FleetService/Register',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetRegistration.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Heartbeat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.FleetService/Heartbeat',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetHeartbeat.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetPulse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Schedule(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.FleetService/Schedule',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetScheduleRequest.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetDispatches.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Claim(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.FleetService/Claim',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetClaim.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAssignment.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CheckLease(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.FleetService/CheckLease',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAuthority.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UploadResult(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_unary(
+            request_iterator,
+            target,
+            '/compiler_optimizer.v1.FleetService/UploadResult',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetResultFrame.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ConfirmCleanup(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.FleetService/ConfirmCleanup',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAuthority.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.FleetAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

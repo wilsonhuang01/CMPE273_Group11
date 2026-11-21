@@ -137,6 +137,7 @@ services:
       <<: *environment
       EXECUTION_ENABLED: "false"
       TRANSFER_ENABLED: "false"
+      FLEET_ENABLED: "false"
       GRPC_HOST: "0.0.0.0"
     ports:
       - "127.0.0.1:${COORDINATOR_GRPC_PORT:-50051}:50051"
@@ -150,7 +151,9 @@ services:
   scheduler:
     <<: *app
     command: [--role, scheduler]
-    environment: *environment
+    environment:
+      <<: *environment
+      SERVICE_ENABLED: "false"
     ports:
       - "127.0.0.1:${SCHEDULER_HEALTH_PORT:-18081}:8080"
     depends_on:
@@ -161,7 +164,9 @@ services:
   worker:
     <<: *app
     command: [--role, worker]
-    environment: *environment
+    environment:
+      <<: *environment
+      SERVICE_ENABLED: "false"
     ports:
       - "127.0.0.1:${WORKER_HEALTH_PORT:-18082}:8080"
     depends_on:

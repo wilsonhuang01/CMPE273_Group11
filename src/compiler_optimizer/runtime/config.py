@@ -31,6 +31,14 @@ class Settings:
     api_token: str = field(default="", repr=False)
     rpc_tls_cert: Path | None = None
     rpc_tls_key: Path | None = field(default=None, repr=False)
+    execution_backend: str = "local"
+    fleet_enabled: bool = True
+    service_enabled: bool = True
+    coordinator_endpoint: str = "127.0.0.1:50052"
+    coordinator_tls: bool = False
+    coordinator_ca: Path | None = None
+    worker_directory: Path = Path("var/worker")
+    worker_target: str = "auto"
 
     @classmethod
     def from_env(cls, role: str, environ=None):
@@ -78,6 +86,24 @@ class Settings:
             raise ValueError("TRANSFER_ENABLED must be true or false")
         if transfer == "true" and role != "coordinator":
             raise ValueError("artifact transfer requires the coordinator role")
+        backend = env.get("EXECUTION_BACKEND", "local")
+        if backend not in {"local", "remote"}:
+            raise ValueError("EXECUTION_BACKEND must be local or remote")
+        switches = {}
+        for key, default in (
+            ("FLEET_ENABLED", "true"),
+            ("SERVICE_ENABLED", "true"),
+            ("COORDINATOR_TLS", "false"),
+        ):
+            switch = env.get(key, default)
+            if switch not in {"true", "false"}:
+                raise ValueError(f"{key} must be true or false")
+            switches[key] = switch == "true"
+        target = env.get("WORKER_TARGET", "auto")
+        if target not in {"auto", "linux-x86_64", "linux-aarch64", "linux-riscv64"}:
+            raise ValueError("unsupported WORKER_TARGET")
+        if role == "coordinator" and backend == "remote" and not switches["FLEET_ENABLED"]:
+            raise ValueError("remote execution requires FLEET_ENABLED")
         settings = cls(
             role=role,
             **values,
@@ -93,6 +119,14 @@ class Settings:
             api_token=env.get("OPTIMIZER_API_TOKEN", ""),
             rpc_tls_cert=Path(env["RPC_TLS_CERT"]) if env.get("RPC_TLS_CERT") else None,
             rpc_tls_key=Path(env["RPC_TLS_KEY"]) if env.get("RPC_TLS_KEY") else None,
+            execution_backend=backend,
+            fleet_enabled=switches["FLEET_ENABLED"],
+            service_enabled=switches["SERVICE_ENABLED"],
+            coordinator_endpoint=env.get("COORDINATOR_ENDPOINT", "127.0.0.1:50052"),
+            coordinator_tls=switches["COORDINATOR_TLS"],
+            coordinator_ca=Path(env["COORDINATOR_CA"]) if env.get("COORDINATOR_CA") else None,
+            worker_directory=Path(env.get("WORKER_DIRECTORY", "var/worker")),
+            worker_target=target,
         )
         validate_rpc_security(settings)
         return settings

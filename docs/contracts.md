@@ -131,8 +131,8 @@ parent version/hash, creation order, and identical compiler settings. Use
 changed source/build settings, and incomplete test/benchmark coverage. These
 helpers take the stored assignment/job. The [repository](storage.md) adds
 persistence, deduplication, and task-state transitions. Recovery enforces local
-worker assignment, lease and fencing checks; remote producer authentication and
-authorization remain deferred.
+worker assignment, lease and fencing checks. The fleet additionally authenticates
+worker incarnations and assignment tokens; per-user authorization remains deferred.
 
 ## Direct calls and queued work
 
@@ -146,10 +146,19 @@ gRPC definitions provide these direct calls:
 - `ArtifactTransferService.UploadPackage(stream PackageUploadFrame) -> Receipt`.
 - `ArtifactTransferService.ListArtifacts(OptimizationQuery) -> TaskArtifacts`.
 - `ArtifactTransferService.DownloadArtifact(ArtifactRequest) -> stream ArtifactChunk`.
+- `FleetService.Ping`, `Register`, `Heartbeat`, `Schedule`, `Claim`, `CheckLease`,
+  `UploadResult(stream FleetResultFrame)` and `ConfirmCleanup`.
+
+The [fleet protocol](autonomous-workers.md) registers immutable capabilities and
+issues expiring, fenced primitive compile/execute/environment assignments.
+Workers authenticate with an incarnation secret and lease token. Result streams
+enforce 64 KiB chunks, 32 MiB total, a bounded deadline and a content hash;
+authority is checked again in the commit transaction. These messages use the
+fleet service's explicit validators rather than the general event validator.
 
 Callers must set per-call deadlines. gRPC is for direct request/response
-coordination; scoped RabbitMQ proposal delivery triggers the host workflow
-that runs long-lived compilation and verification work.
+coordination; scoped RabbitMQ proposal delivery triggers the workflow, and the
+autonomous scheduler publishes primitive work for registered executors.
 The submission RPC accepts already-ingested artifact references.
 The [transfer API](artifact-transfer.md) ingests packages from clients without
 shared filesystems, assigns trusted compiler metadata and invokes submission.
@@ -173,8 +182,10 @@ These isolate the first milestone from the general scheduler queues.
 
 Proposals and heartbeats may use the direct RPC or corresponding event route.
 Choose one transport per logical send; fallback delivery must retain its identity
-so the receiver can deduplicate it. The general job/result routes define the remote execution contract; their Compose
-queues are not consumed by a remote worker fleet. The [scheduler runtime](local-infrastructure.md)
+so the receiver can deduplicate it. The general job/result routes remain reserved;
+the implemented fleet uses the separate durable direct exchange
+`compiler-optimizer.work.v1`, per-worker queues, and `FleetDispatch` envelopes.
+Results commit through RPC. The [scheduler runtime](local-infrastructure.md)
 declares the queues, bindings and dead-letter sink. The implemented host workflow
 uses scoped proposal consumers, publisher confirms, manual acknowledgments, TTL
 retry queues and terminal notices as described in [Fault recovery](fault-recovery.md).
