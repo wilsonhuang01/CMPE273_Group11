@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from compiler_optimizer.runtime.security import validate_rpc_security
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -19,12 +21,16 @@ class Settings:
     redis_password: str = field(default="redis-dev-password", repr=False)
     coordinator_health_url: str = "http://localhost:18080/readyz"
     state_directory: Path = Path("var")
-    health_host: str = "0.0.0.0"
+    health_host: str = "127.0.0.1"
     health_port: int = 8080
     grpc_port: int = 50051
     grpc_host: str = "127.0.0.1"
     probe_interval_seconds: int = 5
     execution_enabled: bool = True
+    transfer_enabled: bool = True
+    api_token: str = field(default="", repr=False)
+    rpc_tls_cert: Path | None = None
+    rpc_tls_key: Path | None = field(default=None, repr=False)
 
     @classmethod
     def from_env(cls, role: str, environ=None):
@@ -57,7 +63,7 @@ class Settings:
             "rabbitmq_vhost": env.get("RABBITMQ_VHOST", "/"),
             "redis_host": env.get("REDIS_HOST", "localhost"),
             "redis_password": env.get("REDIS_PASSWORD", "redis-dev-password"),
-            "health_host": env.get("HEALTH_HOST", "0.0.0.0"),
+            "health_host": env.get("HEALTH_HOST", "127.0.0.1"),
             "grpc_host": env.get("GRPC_HOST", "127.0.0.1"),
         }
         if any(not value for value in values.values()):
@@ -67,7 +73,12 @@ class Settings:
             raise ValueError("EXECUTION_ENABLED must be true or false")
         if execution == "true" and role != "coordinator":
             raise ValueError("automatic execution requires the coordinator role")
-        return cls(
+        transfer = env.get("TRANSFER_ENABLED", "true" if role == "coordinator" else "false")
+        if transfer not in {"true", "false"}:
+            raise ValueError("TRANSFER_ENABLED must be true or false")
+        if transfer == "true" and role != "coordinator":
+            raise ValueError("artifact transfer requires the coordinator role")
+        settings = cls(
             role=role,
             **values,
             rabbitmq_port=number("RABBITMQ_PORT", 5672),
@@ -78,4 +89,10 @@ class Settings:
             coordinator_health_url=url,
             state_directory=Path(env.get("STATE_DIRECTORY", "var")),
             execution_enabled=execution == "true",
+            transfer_enabled=transfer == "true",
+            api_token=env.get("OPTIMIZER_API_TOKEN", ""),
+            rpc_tls_cert=Path(env["RPC_TLS_CERT"]) if env.get("RPC_TLS_CERT") else None,
+            rpc_tls_key=Path(env["RPC_TLS_KEY"]) if env.get("RPC_TLS_KEY") else None,
         )
+        validate_rpc_security(settings)
+        return settings

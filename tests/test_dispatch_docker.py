@@ -105,6 +105,16 @@ def test_submission_resumes_after_actual_coordinator_process_loss(tmp_path):
                     process,
                     log,
                 )
+                # Interrupt measurement, after the one-shot planning iteration commits.
+                # Killing inside that bounded iteration can legitimately exclude the candidate.
+                wait_for(
+                    lambda: any(
+                        row["role"] == pb.BENCHMARK and row["status"] == "completed"
+                        for row in repo.list_agent_iterations(task)
+                    ),
+                    process,
+                    log,
+                )
                 assert (
                     len(
                         [

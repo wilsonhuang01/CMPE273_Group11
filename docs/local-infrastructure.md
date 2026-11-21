@@ -13,7 +13,8 @@ checks readiness and monitoring. Both commands load literal settings from `.env`
 see [Evaluation and release](evaluation.md) for demo and packaging commands.
 For automatic RPC execution, use [the host coordinator](automatic-execution.md)
 with `./project serve`. The Compose coordinator explicitly uses
-`EXECUTION_ENABLED=false`; its container has no Docker execution access.
+`EXECUTION_ENABLED=false` and `TRANSFER_ENABLED=false`; its container has no Docker
+execution access. Package upload and download use the host service on port 50052.
 Low-level commands to start just the infrastructure (without building a compiler
 profile) are:
 

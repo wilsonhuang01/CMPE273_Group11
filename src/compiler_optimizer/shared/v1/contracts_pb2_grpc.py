@@ -325,3 +325,161 @@ class WorkerHealthService(object):
             timeout,
             metadata,
             _registered_method=True)
+
+
+class ArtifactTransferServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.UploadPackage = channel.stream_unary(
+                '/compiler_optimizer.v1.ArtifactTransferService/UploadPackage',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.PackageUploadFrame.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.Receipt.FromString,
+                _registered_method=True)
+        self.ListArtifacts = channel.unary_unary(
+                '/compiler_optimizer.v1.ArtifactTransferService/ListArtifacts',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.OptimizationQuery.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.TaskArtifacts.FromString,
+                _registered_method=True)
+        self.DownloadArtifact = channel.unary_stream(
+                '/compiler_optimizer.v1.ArtifactTransferService/DownloadArtifact',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRequest.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactChunk.FromString,
+                _registered_method=True)
+
+
+class ArtifactTransferServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def UploadPackage(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListArtifacts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DownloadArtifact(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_ArtifactTransferServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'UploadPackage': grpc.stream_unary_rpc_method_handler(
+                    servicer.UploadPackage,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.PackageUploadFrame.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.Receipt.SerializeToString,
+            ),
+            'ListArtifacts': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListArtifacts,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.OptimizationQuery.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.TaskArtifacts.SerializeToString,
+            ),
+            'DownloadArtifact': grpc.unary_stream_rpc_method_handler(
+                    servicer.DownloadArtifact,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRequest.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactChunk.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'compiler_optimizer.v1.ArtifactTransferService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('compiler_optimizer.v1.ArtifactTransferService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class ArtifactTransferService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def UploadPackage(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_unary(
+            request_iterator,
+            target,
+            '/compiler_optimizer.v1.ArtifactTransferService/UploadPackage',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.PackageUploadFrame.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.Receipt.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListArtifacts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.ArtifactTransferService/ListArtifacts',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.OptimizationQuery.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.TaskArtifacts.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DownloadArtifact(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/compiler_optimizer.v1.ArtifactTransferService/DownloadArtifact',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRequest.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactChunk.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

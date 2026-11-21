@@ -16,50 +16,24 @@ coordinator remains on port 50051, with its separate persistent volume and
 work to the host endpoint on 50052. Neither its state nor previously submitted
 Compose tasks are moved by this command.
 
-The host coordinator is trusted infrastructure with Docker access. It is not a
-public upload endpoint. Packages and source bundles must already exist in its
-local artifact store. A separate host submission client can register them and
-call the RPC as follows, using the same `STATE_DIRECTORY` as the server:
+The host coordinator is trusted infrastructure with Docker access. Its
+[package upload and artifact API](artifact-transfer.md) lets a client use a
+separate filesystem without Docker or coordinator database access:
 
 ```sh
-.venv/bin/python - <<'PY'
-import os
-from uuid import uuid4
-
-import grpc
-
-from compiler_optimizer.evaluation.__main__ import native_target
-from compiler_optimizer.shared.v1 import contracts_pb2 as pb
-from compiler_optimizer.shared.v1 import contracts_pb2_grpc as rpc
-from compiler_optimizer.storage import Repository
-from compiler_optimizer.workers.baseline import metadata
-from compiler_optimizer.workers.docker_runner import DockerRunner
-from compiler_optimizer.workers.package import read_package
-from compiler_optimizer.workers.targets import DEFAULT_IMAGES
-
-repo = Repository(os.environ.get("STATE_DIRECTORY", "var/service"))
-package = read_package("examples/sum-array")
-target = native_target()
-runner = DockerRunner(DEFAULT_IMAGES[target], target=target)
-request = pb.Submission(
-    meta=metadata(str(uuid4())), manifest=package.manifest,
-    package=repo.artifacts.put(package.package_bundle),
-    source=pb.SourceVersion(version=1, bundle=repo.artifacts.put(package.source_bundle)),
-    compiler=runner.compiler(package.manifest.language),
-)
-with grpc.insecure_channel("127.0.0.1:" + os.environ.get("GRPC_PORT", "50052")) as channel:
-    client = rpc.CoordinatorServiceStub(channel)
-    receipt = client.SubmitSubmission(request, timeout=10)
-    print("task_id:", receipt.meta.task_id)
-    print(client.GetOptimizationResult(pb.OptimizationQuery(task_id=request.meta.task_id)))
-PY
+./project client submit examples/sum-array --request-file var/client/request.json --wait
+./project client status TASK_ID
+./project client download TASK_ID --output var/client/results
 ```
 
-Poll `GetOptimizationResult` with the printed task ID. The result contains task
-status and execution stage; a completed selection also contains the audit report
-and the selected-source artifact reference. Artifact download remains separate
-future work. No optimization CLI command is needed after intake. The tiny example
-commonly retains the baseline because it cannot establish reliable performance.
+Use the task ID printed by submission for status and download. A completed
+selection supplies the audit report, selected source and task-scoped evidence.
+No optimization CLI command is needed after intake. The tiny example commonly
+retains the baseline because it cannot establish reliable performance.
+
+Loopback is the development default. Remote execution/transfer binds require TLS
+and bearer authentication; see the [transfer guide](artifact-transfer.md) for
+configuration, retry identities, limits and output layout.
 
 ## Durable acceptance and restart behavior
 
@@ -101,9 +75,9 @@ uncommitted execution, but committed results remain idempotent. If another local
 orchestrator holds the state lock, dispatch waits without consuming an attempt.
 
 The direct runtime command also enables automatic dispatch by default for the
-coordinator role. `EXECUTION_ENABLED=false` explicitly selects intake-only mode.
+coordinator role. `EXECUTION_ENABLED=false` disables dispatch; `TRANSFER_ENABLED=false` disables upload/download.
 The other service roles remain infrastructure-only. Independent remote workers,
-parallel dispatch, model backends and public artifact transport are separate work.
+parallel dispatch and model backends remain separate work.
 
 ## Validation
 

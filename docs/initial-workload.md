@@ -4,7 +4,8 @@ Status: implemented CPU submission contract. Package intake, sandboxed baseline
 execution, generated proposals, mandatory correctness checks, repeated benchmarking,
 weighted selection and local worker recovery are implemented. Start with the
 [docs index](README.md) for current progress and the [evaluation guide](evaluation.md)
-for the complete local demo. Remote worker dispatch and public uploads remain deferred.
+for the complete local demo. The host [transfer service](artifact-transfer.md) accepts
+package uploads; independent remote worker dispatch remains deferred.
 
 ## Supported programs
 
@@ -38,9 +39,10 @@ MLIR passes and user-supplied LLVM IR remain deferred.
 ## Submission package
 
 A user supplies a directory containing `submission.json`, source/header files,
-and input/expected-output fixtures. A future API may transport the same contents,
-but a public upload endpoint is not implemented. Local directory ingestion is
-available through the [baseline CLI](baseline.md) and host coordinator commands.
+and input/expected-output fixtures. The [transfer API](artifact-transfer.md)
+transports these contents as a bounded snapshot and stores them centrally.
+Local directory ingestion remains available through the [baseline CLI](baseline.md)
+and host coordinator commands.
 
 All paths are relative to the submission root. Reject absolute paths, `..`
 components, symlinks, and references outside that root. Accept only regular files

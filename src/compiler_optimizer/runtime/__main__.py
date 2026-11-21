@@ -16,6 +16,8 @@ from compiler_optimizer.runtime.coordinator import CoordinatorService
 from compiler_optimizer.runtime.dependencies import check_coordinator, check_rabbitmq, check_redis
 from compiler_optimizer.runtime.dispatch import SubmissionDispatcher
 from compiler_optimizer.runtime.health import Readiness, health_server
+from compiler_optimizer.runtime.security import BearerAuth, validate_rpc_security
+from compiler_optimizer.runtime.transfer import ArtifactTransferService
 from compiler_optimizer.runtime.worker_health import WorkerHealthService
 from compiler_optimizer.shared.contracts import MAX_MESSAGE_BYTES
 from compiler_optimizer.shared.v1 import contracts_pb2_grpc as rpc
@@ -23,6 +25,7 @@ from compiler_optimizer.storage import Repository
 
 
 def run(settings):
+    validate_rpc_security(settings)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -40,19 +43,34 @@ def run(settings):
         executor = ThreadPoolExecutor(max_workers=4)
         grpc_server = grpc.server(
             executor,
+            interceptors=(BearerAuth(settings.api_token),),
+            maximum_concurrent_rpcs=8,
             options=[
                 ("grpc.max_receive_message_length", MAX_MESSAGE_BYTES),
                 ("grpc.max_send_message_length", MAX_MESSAGE_BYTES),
             ],
         )
-        rpc.add_CoordinatorServiceServicer_to_server(
-            CoordinatorService(repository, execution_enabled=settings.execution_enabled),
-            grpc_server,
-        )
+        coordinator = CoordinatorService(repository, execution_enabled=settings.execution_enabled)
+        rpc.add_CoordinatorServiceServicer_to_server(coordinator, grpc_server)
+        if settings.transfer_enabled:
+            rpc.add_ArtifactTransferServiceServicer_to_server(
+                ArtifactTransferService(repository, coordinator), grpc_server
+            )
         if settings.execution_enabled:
             dispatcher = SubmissionDispatcher(repository, settings)
         rpc.add_WorkerHealthServiceServicer_to_server(WorkerHealthService(repository), grpc_server)
-        if not grpc_server.add_insecure_port(f"{settings.grpc_host}:{settings.grpc_port}"):
+        host = settings.grpc_host.strip("[]")
+        address = (
+            f"[{host}]:{settings.grpc_port}" if ":" in host else f"{host}:{settings.grpc_port}"
+        )
+        if settings.rpc_tls_cert:
+            credentials = grpc.ssl_server_credentials(
+                ((settings.rpc_tls_key.read_bytes(), settings.rpc_tls_cert.read_bytes()),)
+            )
+            port = grpc_server.add_secure_port(address, credentials)
+        else:
+            port = grpc_server.add_insecure_port(address)
+        if not port:
             raise RuntimeError("cannot bind coordinator gRPC port")
         grpc_server.start()
     else:

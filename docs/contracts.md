@@ -76,7 +76,7 @@ checks declarations, not the existence of the declared compiler image.
 
 ## Message responsibilities
 
-- `Submission`: coordinator-assigned task metadata, validated manifest, original
+- `Submission`: versioned task/request metadata, validated manifest, original
   package artifact (including tests), baseline source bundle, and build profile.
 - `OptimizationRequest`: assigned proposal ID and agent role, manifest, parent
   source, and fixed build profile. Roles cover Performance, Memory, Correctness,
@@ -143,12 +143,18 @@ gRPC definitions provide these direct calls:
 - `CoordinatorService.GetOptimizationResult(OptimizationQuery) -> OptimizationResult`.
 - `AgentService.GenerateProposal(OptimizationRequest) -> Proposal`.
 - `WorkerHealthService.ReportHeartbeat(WorkerHeartbeat) -> Receipt`.
+- `ArtifactTransferService.UploadPackage(stream PackageUploadFrame) -> Receipt`.
+- `ArtifactTransferService.ListArtifacts(OptimizationQuery) -> TaskArtifacts`.
+- `ArtifactTransferService.DownloadArtifact(ArtifactRequest) -> stream ArtifactChunk`.
 
 Callers must set per-call deadlines. gRPC is for direct request/response
 coordination; scoped RabbitMQ proposal delivery triggers the host workflow
 that runs long-lived compilation and verification work.
-The service submission RPC is an internal contract after package ingestion, not a
-public directory-upload API. The [local runtime](local-infrastructure.md) implements
+The submission RPC accepts already-ingested artifact references.
+The [transfer API](artifact-transfer.md) ingests packages from clients without
+shared filesystems, assigns trusted compiler metadata and invokes submission.
+Transfer chunks are at most 64 KiB inside the existing 1 MiB message limit;
+stream byte/frame/deadline bounds are enforced separately. The [local runtime](local-infrastructure.md) implements
 the coordinator intake/result calls. [Worker health](fault-recovery.md) includes a
 heartbeat RPC service for host-managed recovery. Agents run locally behind Python
 interfaces; a standalone AgentService RPC server is not implemented.

@@ -23,6 +23,7 @@ x-app: &app
       max-file: "3"
 
 x-environment: &environment
+  HEALTH_HOST: "0.0.0.0"
   RABBITMQ_HOST: rabbitmq
   RABBITMQ_USER: ${RABBITMQ_USER:-optimizer}
   RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-optimizer-dev-password}
@@ -135,6 +136,7 @@ services:
     environment:
       <<: *environment
       EXECUTION_ENABLED: "false"
+      TRANSFER_ENABLED: "false"
       GRPC_HOST: "0.0.0.0"
     ports:
       - "127.0.0.1:${COORDINATOR_GRPC_PORT:-50051}:50051"

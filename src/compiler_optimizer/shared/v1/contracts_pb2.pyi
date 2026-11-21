@@ -354,3 +354,55 @@ class OptimizationResult(_message.Message):
     report: ArtifactRef
     selected_source: SourceVersion
     def __init__(self, task_id: _Optional[str] = ..., status: _Optional[str] = ..., stage: _Optional[str] = ..., report_json: _Optional[str] = ..., report: _Optional[_Union[ArtifactRef, _Mapping]] = ..., selected_source: _Optional[_Union[SourceVersion, _Mapping]] = ...) -> None: ...
+
+class PackageUploadHeader(_message.Message):
+    __slots__ = ("meta", "package", "target")
+    META_FIELD_NUMBER: _ClassVar[int]
+    PACKAGE_FIELD_NUMBER: _ClassVar[int]
+    TARGET_FIELD_NUMBER: _ClassVar[int]
+    meta: Metadata
+    package: ArtifactRef
+    target: str
+    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., package: _Optional[_Union[ArtifactRef, _Mapping]] = ..., target: _Optional[str] = ...) -> None: ...
+
+class PackageUploadFrame(_message.Message):
+    __slots__ = ("header", "data")
+    HEADER_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    header: PackageUploadHeader
+    data: bytes
+    def __init__(self, header: _Optional[_Union[PackageUploadHeader, _Mapping]] = ..., data: _Optional[bytes] = ...) -> None: ...
+
+class TaskArtifact(_message.Message):
+    __slots__ = ("artifact", "kind", "owner_id")
+    ARTIFACT_FIELD_NUMBER: _ClassVar[int]
+    KIND_FIELD_NUMBER: _ClassVar[int]
+    OWNER_ID_FIELD_NUMBER: _ClassVar[int]
+    artifact: ArtifactRef
+    kind: str
+    owner_id: str
+    def __init__(self, artifact: _Optional[_Union[ArtifactRef, _Mapping]] = ..., kind: _Optional[str] = ..., owner_id: _Optional[str] = ...) -> None: ...
+
+class TaskArtifacts(_message.Message):
+    __slots__ = ("task_id", "artifacts")
+    TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACTS_FIELD_NUMBER: _ClassVar[int]
+    task_id: str
+    artifacts: _containers.RepeatedCompositeFieldContainer[TaskArtifact]
+    def __init__(self, task_id: _Optional[str] = ..., artifacts: _Optional[_Iterable[_Union[TaskArtifact, _Mapping]]] = ...) -> None: ...
+
+class ArtifactRequest(_message.Message):
+    __slots__ = ("task_id", "artifact")
+    TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    ARTIFACT_FIELD_NUMBER: _ClassVar[int]
+    task_id: str
+    artifact: ArtifactRef
+    def __init__(self, task_id: _Optional[str] = ..., artifact: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+
+class ArtifactChunk(_message.Message):
+    __slots__ = ("offset", "data")
+    OFFSET_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    offset: int
+    data: bytes
+    def __init__(self, offset: _Optional[int] = ..., data: _Optional[bytes] = ...) -> None: ...

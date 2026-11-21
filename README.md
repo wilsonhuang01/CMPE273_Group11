@@ -26,6 +26,8 @@ Run `./project serve` to start a host coordinator that automatically executes
 and selection. It persists task IDs, frozen policies and execution checkpoints across
 restarts. See [automatic submission execution](docs/automatic-execution.md) for
 submission examples, status, retry limits and the distinction from Compose intake.
+Clients can [upload packages and download selected source and evidence](docs/artifact-transfer.md)
+using `./project client`, without sharing the coordinator's filesystem.
 
 ## Initial implementation scope
 
@@ -39,9 +41,10 @@ pipeline works. The architecture below describes the full planned system.
 See the [initial workload and submission contract](docs/initial-workload.md) for
 supported programs, build rules, correctness checks, resource limits, and milestone
 acceptance criteria. The [sum-array example](examples/sum-array/submission.json)
-provides a complete sample submission. These files define the first milestone;
-the public source-upload service remains future work. The opt-in first milestone
-below connects generation, broker delivery, sandbox checks and final results.
+provides a complete sample submission. The host service accepts streamed package
+uploads with validated artifact references; remote access requires TLS and bearer
+authentication. The workflow below connects generation, broker delivery, sandbox
+checks and final results.
 
 ## Development
 

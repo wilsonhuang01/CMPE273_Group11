@@ -200,7 +200,7 @@ message OptimizationQuery {
   string task_id = 1;
 }
 
-// Internal status API; artifact references use the coordinator-owned artifact store.
+// Status API; artifacts can be retrieved through task-scoped transfer RPCs.
 message OptimizationResult {
   string task_id = 1;
   string status = 2;
@@ -222,4 +222,46 @@ service AgentService {
 
 service WorkerHealthService {
   rpc ReportHeartbeat(WorkerHeartbeat) returns (Receipt);
+}
+
+// Upload frames contain exactly one header followed by bounded data frames.
+message PackageUploadHeader {
+  Metadata meta = 1;
+  ArtifactRef package = 2;
+  // Empty selects the server's native CPU profile.
+  string target = 3;
+}
+
+message PackageUploadFrame {
+  oneof frame {
+    PackageUploadHeader header = 1;
+    bytes data = 2;
+  }
+}
+
+message TaskArtifact {
+  ArtifactRef artifact = 1;
+  string kind = 2;
+  string owner_id = 3;
+}
+
+message TaskArtifacts {
+  string task_id = 1;
+  repeated TaskArtifact artifacts = 2;
+}
+
+message ArtifactRequest {
+  string task_id = 1;
+  ArtifactRef artifact = 2;
+}
+
+message ArtifactChunk {
+  uint64 offset = 1;
+  bytes data = 2;
+}
+
+service ArtifactTransferService {
+  rpc UploadPackage(stream PackageUploadFrame) returns (Receipt);
+  rpc ListArtifacts(OptimizationQuery) returns (TaskArtifacts);
+  rpc DownloadArtifact(ArtifactRequest) returns (stream ArtifactChunk);
 }

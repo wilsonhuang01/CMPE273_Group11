@@ -60,7 +60,7 @@ single-proposal pipeline and standalone worker commands do not use that controll
 
 Still pending: NVIDIA GPU execution, GPU correctness/event timing and real device/
 host recovery operations; external inference-provider adapters and authentication;
-a public source-upload endpoint; remote execution authentication and dispatch;
+independent remote worker authentication and dispatch;
 replicated storage, scheduled backups and automatic artifact retention; MLIR
 transformation integration. GPU quarantine/recovery decision rules are tested
 contracts, not validated hardware recovery.
@@ -89,3 +89,5 @@ current source tree and may include corrections made after those archives.
 
 [Automatic submission execution](automatic-execution.md) describes `./project serve`,
 durable RPC dispatch, restart recovery and the host coordinator's separate state.
+[Package and artifact transfer](artifact-transfer.md) covers `./project client`,
+streaming upload, task-scoped downloads and TLS/bearer authentication.
