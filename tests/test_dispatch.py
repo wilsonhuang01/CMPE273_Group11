@@ -310,3 +310,18 @@ def test_only_this_submissions_watchdogs_are_cleaned(submitted, monkeypatch):
     dispatcher(repo, runner).run_once()
     assert not remove.called
     assert repo.get_execution(request.meta.task_id)["stage"] == "completed"
+
+
+def test_existing_submission_preserves_local_agents_after_rpc_deployment(submitted):
+    from dataclasses import replace
+
+    repo, runner, request = submitted
+    config = default_workflow()
+    config.pop("agent_backend")  # A task accepted before agent RPC configuration existed.
+    config["agents"] = ["performance"]
+    repo.save_submission(request, execution=config)
+    owner = dispatcher(repo, runner)
+    owner.settings = replace(owner.settings, agent_backend="rpc", agent_timeout_seconds=0.05)
+    assert owner.run_once()
+    assert repo.get_task(request.meta.task_id)["status"] == "completed"
+    assert not repo.list_agent_rpc_calls(request.meta.task_id)

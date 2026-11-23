@@ -234,3 +234,13 @@ compares bytes, so a schema edit requires updating its checked-in outputs.
 
 The generation layout follows the [gRPC Python guide](https://grpc.io/docs/languages/python/quickstart/)
 and [protobuf language guide](https://protobuf.dev/programming-guides/proto3/).
+
+## Agent RPC extension
+
+Action F keeps `AgentService.GenerateProposal(OptimizationRequest) -> Proposal`
+and adds `Review`, `PlanBenchmark`, `PutArtifact`, `GetArtifact` and `Ping`.
+`AgentAssessmentRequest` binds exact stored evidence and frozen policies;
+`AgentAssessment` contains a strictly validated record plus `AgentProvenance`.
+Optional `OptimizationRequest.replay_patch` and `Proposal.structured_patch` /
+`agent_provenance` fields preserve older local message formats. Existing field
+numbers are unchanged. See [agent RPC authority and validation](agent-rpc.md).

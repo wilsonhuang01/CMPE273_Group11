@@ -126,6 +126,35 @@ class PipelineStorage:
                 )
             ]
 
+    def record_agent_rpc(self, task_id, role, operation, request_sha256, receipt):
+        from uuid import uuid4
+
+        role_spec(role)
+        ref = self.artifacts.put(json.dumps(receipt, sort_keys=True, allow_nan=False).encode())
+        call_id = str(uuid4())
+        with self._transaction() as db:
+            self._task(db, task_id)
+            self._artifact(db, task_id, ref, "agent-rpc", owner=call_id)
+            for name in ("request", "response"):
+                if name in receipt:
+                    evidence = pb.ArtifactRef(**receipt[name])
+                    self.artifacts.get(evidence)
+                    self._artifact(db, task_id, evidence, "agent-rpc-" + name, owner=call_id)
+            db.execute(
+                "INSERT INTO agent_rpc_calls VALUES(?,?,?,?,?,?,?)",
+                (call_id, task_id, role, operation, request_sha256, receipt["status"], ref.key),
+            )
+
+    def list_agent_rpc_calls(self, task_id):
+        with self._transaction(write=False) as db:
+            self._task(db, task_id)
+            return [
+                dict(r)
+                for r in db.execute(
+                    "SELECT * FROM agent_rpc_calls WHERE task_id=? ORDER BY rowid", (task_id,)
+                )
+            ]
+
     @contextmanager
     def pipeline_lock(self):
         """Serialize local milestone orchestrators; the database is never held during execution."""

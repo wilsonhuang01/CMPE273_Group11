@@ -48,8 +48,10 @@ class PipelineCoordinator:
         review_backends=None,
         selection_policy=None,
         recovery=None,
+        agent_client=None,
     ):
         self.repository, self.runner, self.broker = repository, runner, broker
+        self.agent_client = agent_client
         self.recovery = recovery
         self.last_task_id = None
         self.selection_policy = selection_policy
@@ -60,6 +62,15 @@ class PipelineCoordinator:
             set(self.review_backends) <= {"correctness", "critic"},
             "review backends are only supported for correctness and critic",
         )
+
+        if agent_client is not None:
+            require(
+                not self.review_backends, "RPC review adapters are configured by their services"
+            )
+            self.review_backends = {
+                name: agent_client.reviewer(role)
+                for name, role in (("correctness", pb.CORRECTNESS), ("critic", pb.CRITIC))
+            }
 
     def run(
         self, task_id, backend=None, verification_plan=None, benchmark_plan=None, *, agent=None
@@ -149,7 +160,15 @@ class PipelineCoordinator:
                 pb.MEMORY: (MemoryAgent, ExampleMemoryBackend),
                 pb.ARCHITECTURE: (ArchitectureAgent, ExampleArchitectureBackend),
             }[role]
-            generator = agent_type(repository.artifacts, backend or default_backend())
+            if self.agent_client is not None:
+                require(
+                    backend is None or isinstance(backend, FilePatchBackend),
+                    "RPC generators accept deterministic or file replay backends",
+                )
+                patch = repository.artifacts.put(backend.generate(request, {})) if backend else None
+                generator = self.agent_client.generator(role, patch)
+            else:
+                generator = agent_type(repository.artifacts, backend or default_backend())
             window = (
                 self.runner.work_window(memory_mib=256)
                 if hasattr(self.runner, "work_window")
@@ -233,6 +252,10 @@ class PipelineCoordinator:
             if value.proposal_id == proposal.proposal_id
         )
         require(encode_message(proposal) == encode_message(stored), "pipeline proposal was altered")
+        require(
+            proposal.HasField("agent_provenance") == (self.agent_client is not None),
+            "resume requires the original local/RPC agent transport",
+        )
         self._ensure_selection(proposal)
         if self.recovery is not None:
             self.recovery.publish_quarantines(task_id)
@@ -256,6 +279,7 @@ class PipelineCoordinator:
                 self.runner,
                 review_backends=self.review_backends,
                 recovery=self.recovery,
+                agent_client=self.agent_client,
             )
         except RecoveryTerminal as error:
             return self._finish_terminal(proposal, run, error.receipt)
@@ -433,6 +457,7 @@ def main():
     try:
         repository = Repository(args.state)
         runner = DockerRunner(args.image, watchdog_directory=Path(args.state) / "watchdogs")
+        from compiler_optimizer.agents.rpc_client import configured_client
         from compiler_optimizer.workers.execution import local_recovery
 
         coordinator = PipelineCoordinator(
@@ -440,6 +465,7 @@ def main():
             runner,
             RabbitProposalQueue(Settings.from_env("coordinator")),
             recovery=local_recovery(repository, runner),
+            agent_client=configured_client(repository),
             selection_policy=SelectionPolicy.parse(Path(args.selection_policy).read_bytes())
             if args.selection_policy
             else None,

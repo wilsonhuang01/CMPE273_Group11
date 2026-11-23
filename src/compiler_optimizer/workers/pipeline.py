@@ -24,6 +24,7 @@ def evaluate_proposal(
     configuration=None,
     recovery=None,
     verification_only=False,
+    agent_client=None,
 ):
     run = repository.get_pipeline(task_id)
     if configuration is None:
@@ -57,6 +58,7 @@ def evaluate_proposal(
                 recovery_attempt=True,
                 force_verification=force,
                 verification_only=verification_only,
+                agent_client=agent_client,
             ),
             scope="preparation" if verification_only else "evaluate",
         )
@@ -69,6 +71,7 @@ def evaluate_proposal(
         config,
         review_backends,
         verification_only=verification_only,
+        agent_client=agent_client,
     )
 
 
@@ -84,6 +87,7 @@ def _evaluate_stages(
     recovery_attempt=False,
     force_verification=False,
     verification_only=False,
+    agent_client=None,
 ):
     from compiler_optimizer.shared.recovery import infrastructure_failure
     from compiler_optimizer.workers.recovery_evidence import check_benchmark, check_verification
@@ -159,9 +163,15 @@ def _evaluate_stages(
         if proposal.compiler.target == "linux-riscv64":
             return verified, None, reviews, None
         if config["schema_version"] >= 2:
-            work = BenchmarkAgent(repository).organize(
-                proposal, verified, pb.ArtifactRef(**config["benchmark_plan"])
+            window = (
+                runner.work_window(memory_mib=256)
+                if hasattr(runner, "work_window")
+                else nullcontext()
             )
+            with window:
+                work = BenchmarkAgent(repository, agent_client).organize(
+                    proposal, verified, pb.ArtifactRef(**config["benchmark_plan"])
+                )
         reports = [
             record
             for record in repository.list_benchmarks(task_id)

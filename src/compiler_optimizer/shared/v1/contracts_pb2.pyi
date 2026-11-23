@@ -180,23 +180,43 @@ class Submission(_message.Message):
     def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., package: _Optional[_Union[ArtifactRef, _Mapping]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ...) -> None: ...
 
 class OptimizationRequest(_message.Message):
-    __slots__ = ("meta", "proposal_id", "role", "manifest", "source", "compiler")
+    __slots__ = ("meta", "proposal_id", "role", "manifest", "source", "compiler", "replay_patch")
     META_FIELD_NUMBER: _ClassVar[int]
     PROPOSAL_ID_FIELD_NUMBER: _ClassVar[int]
     ROLE_FIELD_NUMBER: _ClassVar[int]
     MANIFEST_FIELD_NUMBER: _ClassVar[int]
     SOURCE_FIELD_NUMBER: _ClassVar[int]
     COMPILER_FIELD_NUMBER: _ClassVar[int]
+    REPLAY_PATCH_FIELD_NUMBER: _ClassVar[int]
     meta: Metadata
     proposal_id: str
     role: AgentRole
     manifest: SubmissionManifest
     source: SourceVersion
     compiler: CompilerSettings
-    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ...) -> None: ...
+    replay_patch: ArtifactRef
+    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., replay_patch: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+
+class AgentProvenance(_message.Message):
+    __slots__ = ("schema_version", "role", "service_id", "backend", "request_sha256", "response_sha256", "release")
+    SCHEMA_VERSION_FIELD_NUMBER: _ClassVar[int]
+    ROLE_FIELD_NUMBER: _ClassVar[int]
+    SERVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    BACKEND_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_SHA256_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_SHA256_FIELD_NUMBER: _ClassVar[int]
+    RELEASE_FIELD_NUMBER: _ClassVar[int]
+    schema_version: int
+    role: AgentRole
+    service_id: str
+    backend: str
+    request_sha256: str
+    response_sha256: str
+    release: str
+    def __init__(self, schema_version: _Optional[int] = ..., role: _Optional[_Union[AgentRole, str]] = ..., service_id: _Optional[str] = ..., backend: _Optional[str] = ..., request_sha256: _Optional[str] = ..., response_sha256: _Optional[str] = ..., release: _Optional[str] = ...) -> None: ...
 
 class Proposal(_message.Message):
-    __slots__ = ("meta", "proposal_id", "role", "source", "rationale", "transformation", "compiler")
+    __slots__ = ("meta", "proposal_id", "role", "source", "rationale", "transformation", "compiler", "structured_patch", "agent_provenance")
     META_FIELD_NUMBER: _ClassVar[int]
     PROPOSAL_ID_FIELD_NUMBER: _ClassVar[int]
     ROLE_FIELD_NUMBER: _ClassVar[int]
@@ -204,6 +224,8 @@ class Proposal(_message.Message):
     RATIONALE_FIELD_NUMBER: _ClassVar[int]
     TRANSFORMATION_FIELD_NUMBER: _ClassVar[int]
     COMPILER_FIELD_NUMBER: _ClassVar[int]
+    STRUCTURED_PATCH_FIELD_NUMBER: _ClassVar[int]
+    AGENT_PROVENANCE_FIELD_NUMBER: _ClassVar[int]
     meta: Metadata
     proposal_id: str
     role: AgentRole
@@ -211,7 +233,9 @@ class Proposal(_message.Message):
     rationale: str
     transformation: str
     compiler: CompilerSettings
-    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., rationale: _Optional[str] = ..., transformation: _Optional[str] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ...) -> None: ...
+    structured_patch: ArtifactRef
+    agent_provenance: AgentProvenance
+    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., rationale: _Optional[str] = ..., transformation: _Optional[str] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., structured_patch: _Optional[_Union[ArtifactRef, _Mapping]] = ..., agent_provenance: _Optional[_Union[AgentProvenance, _Mapping]] = ...) -> None: ...
 
 class VerificationJob(_message.Message):
     __slots__ = ("meta", "job_id", "baseline", "proposal_id", "source", "manifest", "compiler", "attempt", "deadline_unix_ms", "additional_test_ids", "verification_plan", "verification_inputs")
@@ -354,6 +378,56 @@ class OptimizationResult(_message.Message):
     report: ArtifactRef
     selected_source: SourceVersion
     def __init__(self, task_id: _Optional[str] = ..., status: _Optional[str] = ..., stage: _Optional[str] = ..., report_json: _Optional[str] = ..., report: _Optional[_Union[ArtifactRef, _Mapping]] = ..., selected_source: _Optional[_Union[SourceVersion, _Mapping]] = ...) -> None: ...
+
+class AgentArtifactFrame(_message.Message):
+    __slots__ = ("header", "data")
+    HEADER_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    header: ArtifactRequest
+    data: bytes
+    def __init__(self, header: _Optional[_Union[ArtifactRequest, _Mapping]] = ..., data: _Optional[bytes] = ...) -> None: ...
+
+class AgentAssessmentRequest(_message.Message):
+    __slots__ = ("meta", "role", "submission", "proposal", "job", "verification", "benchmark_plan")
+    META_FIELD_NUMBER: _ClassVar[int]
+    ROLE_FIELD_NUMBER: _ClassVar[int]
+    SUBMISSION_FIELD_NUMBER: _ClassVar[int]
+    PROPOSAL_FIELD_NUMBER: _ClassVar[int]
+    JOB_FIELD_NUMBER: _ClassVar[int]
+    VERIFICATION_FIELD_NUMBER: _ClassVar[int]
+    BENCHMARK_PLAN_FIELD_NUMBER: _ClassVar[int]
+    meta: Metadata
+    role: AgentRole
+    submission: Submission
+    proposal: Proposal
+    job: VerificationJob
+    verification: VerificationResult
+    benchmark_plan: ArtifactRef
+    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., role: _Optional[_Union[AgentRole, str]] = ..., submission: _Optional[_Union[Submission, _Mapping]] = ..., proposal: _Optional[_Union[Proposal, _Mapping]] = ..., job: _Optional[_Union[VerificationJob, _Mapping]] = ..., verification: _Optional[_Union[VerificationResult, _Mapping]] = ..., benchmark_plan: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+
+class AgentAssessment(_message.Message):
+    __slots__ = ("record_json", "provenance")
+    RECORD_JSON_FIELD_NUMBER: _ClassVar[int]
+    PROVENANCE_FIELD_NUMBER: _ClassVar[int]
+    record_json: str
+    provenance: AgentProvenance
+    def __init__(self, record_json: _Optional[str] = ..., provenance: _Optional[_Union[AgentProvenance, _Mapping]] = ...) -> None: ...
+
+class AgentPing(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class AgentIdentity(_message.Message):
+    __slots__ = ("role", "service_id", "backend", "release")
+    ROLE_FIELD_NUMBER: _ClassVar[int]
+    SERVICE_ID_FIELD_NUMBER: _ClassVar[int]
+    BACKEND_FIELD_NUMBER: _ClassVar[int]
+    RELEASE_FIELD_NUMBER: _ClassVar[int]
+    role: AgentRole
+    service_id: str
+    backend: str
+    release: str
+    def __init__(self, role: _Optional[_Union[AgentRole, str]] = ..., service_id: _Optional[str] = ..., backend: _Optional[str] = ..., release: _Optional[str] = ...) -> None: ...
 
 class PackageUploadHeader(_message.Message):
     __slots__ = ("meta", "package", "target")

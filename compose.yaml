@@ -33,6 +33,25 @@ x-environment: &environment
   COORDINATOR_HEALTH_URL: http://coordinator:8080/readyz
   STATE_DIRECTORY: /var/lib/compiler-optimizer
 
+x-agent: &agent
+  <<: *app
+  user: "10002:10002"
+
+x-agent-environment: &agent-environment
+  HEALTH_HOST: "0.0.0.0"
+  STATE_DIRECTORY: /var/lib/compiler-agent
+  PROBE_INTERVAL_SECONDS: ${PROBE_INTERVAL_SECONDS:-5}
+  EXECUTION_ENABLED: "false"
+  TRANSFER_ENABLED: "false"
+  FLEET_ENABLED: "false"
+  HEALTH_PORT: "8080"
+  GRPC_HOST: "0.0.0.0"
+  GRPC_PORT: "50051"
+  AGENT_API_TOKEN: ${AGENT_API_TOKEN:-optimizer-agent-dev-token-change-me-0001}
+  AGENT_DEV_TLS: "true"
+  AGENT_TLS_DIRECTORY: /var/lib/compiler-agent/tls
+  AGENT_CA_DIRECTORY: /agent-ca
+
 services:
   compiler-arm:
     profiles: [native-arm]
@@ -130,6 +149,90 @@ services:
       timeout: 3s
       retries: 12
 
+  agent-performance:
+    <<: *agent
+    command: [--role, performance]
+    environment:
+      <<: *agent-environment
+    cpus: 1.0
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:${AGENT_PERFORMANCE_PORT:-50061}:50051"
+      - "127.0.0.1:${AGENT_PERFORMANCE_HEALTH_PORT:-19091}:8080"
+    volumes:
+      - agent-performance-data:/var/lib/compiler-agent
+      - agent-public-ca:/agent-ca
+
+  agent-memory:
+    <<: *agent
+    command: [--role, memory]
+    environment:
+      <<: *agent-environment
+    cpus: 1.0
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:${AGENT_MEMORY_PORT:-50062}:50051"
+      - "127.0.0.1:${AGENT_MEMORY_HEALTH_PORT:-19092}:8080"
+    volumes:
+      - agent-memory-data:/var/lib/compiler-agent
+      - agent-public-ca:/agent-ca
+
+  agent-correctness:
+    <<: *agent
+    command: [--role, correctness]
+    environment:
+      <<: *agent-environment
+    cpus: 1.0
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:${AGENT_CORRECTNESS_PORT:-50064}:50051"
+      - "127.0.0.1:${AGENT_CORRECTNESS_HEALTH_PORT:-19094}:8080"
+    volumes:
+      - agent-correctness-data:/var/lib/compiler-agent
+      - agent-public-ca:/agent-ca
+
+  agent-architecture:
+    <<: *agent
+    command: [--role, architecture]
+    environment:
+      <<: *agent-environment
+    cpus: 1.0
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:${AGENT_ARCHITECTURE_PORT:-50063}:50051"
+      - "127.0.0.1:${AGENT_ARCHITECTURE_HEALTH_PORT:-19093}:8080"
+    volumes:
+      - agent-architecture-data:/var/lib/compiler-agent
+      - agent-public-ca:/agent-ca
+
+  agent-critic:
+    <<: *agent
+    command: [--role, critic]
+    environment:
+      <<: *agent-environment
+    cpus: 1.0
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:${AGENT_CRITIC_PORT:-50065}:50051"
+      - "127.0.0.1:${AGENT_CRITIC_HEALTH_PORT:-19095}:8080"
+    volumes:
+      - agent-critic-data:/var/lib/compiler-agent
+      - agent-public-ca:/agent-ca
+
+  agent-benchmark:
+    <<: *agent
+    command: [--role, benchmark]
+    environment:
+      <<: *agent-environment
+    cpus: 1.0
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:${AGENT_BENCHMARK_PORT:-50066}:50051"
+      - "127.0.0.1:${AGENT_BENCHMARK_HEALTH_PORT:-19096}:8080"
+    volumes:
+      - agent-benchmark-data:/var/lib/compiler-agent
+      - agent-public-ca:/agent-ca
+
   coordinator:
     <<: *app
     command: [--role, coordinator]
@@ -139,14 +242,26 @@ services:
       TRANSFER_ENABLED: "false"
       FLEET_ENABLED: "false"
       GRPC_HOST: "0.0.0.0"
+      AGENT_BACKEND: rpc
+      AGENT_TLS: "true"
+      AGENT_API_TOKEN: ${AGENT_API_TOKEN:-optimizer-agent-dev-token-change-me-0001}
+      AGENT_CA_DIRECTORY: /agent-ca
+      AGENT_ENDPOINTS: '{"performance":"agent-performance:50051","memory":"agent-memory:50051","correctness":"agent-correctness:50051","architecture":"agent-architecture:50051","critic":"agent-critic:50051","benchmark":"agent-benchmark:50051"}'
     ports:
       - "127.0.0.1:${COORDINATOR_GRPC_PORT:-50051}:50051"
       - "127.0.0.1:${COORDINATOR_HEALTH_PORT:-18080}:8080"
     volumes:
       - coordinator-data:/var/lib/compiler-optimizer
+      - agent-public-ca:/agent-ca:ro
     depends_on:
       rabbitmq: {condition: service_healthy}
       redis: {condition: service_healthy}
+      agent-performance: {condition: service_healthy}
+      agent-memory: {condition: service_healthy}
+      agent-correctness: {condition: service_healthy}
+      agent-architecture: {condition: service_healthy}
+      agent-critic: {condition: service_healthy}
+      agent-benchmark: {condition: service_healthy}
 
   scheduler:
     <<: *app
@@ -224,3 +339,10 @@ volumes:
   redis-data:
   prometheus-data:
   grafana-data:
+  agent-performance-data:
+  agent-memory-data:
+  agent-correctness-data:
+  agent-architecture-data:
+  agent-critic-data:
+  agent-benchmark-data:
+  agent-public-ca:

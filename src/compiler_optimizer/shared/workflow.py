@@ -13,6 +13,7 @@ def default_workflow():
     return {
         "schema_version": 1,
         "execution_backend": "local",
+        "agent_backend": "local",
         "agents": ["performance", "memory", "architecture"],
         "verification_plan": json.loads(VerificationPlan().encode()),
         "benchmark_plan": json.loads(BenchmarkPlan().encode()),
@@ -26,7 +27,8 @@ def default_workflow():
 def validate_workflow(value):
     expected = set(default_workflow())
     require(
-        isinstance(value, dict) and set(value) in (expected, expected - {"execution_backend"}),
+        isinstance(value, dict)
+        and expected - {"execution_backend", "agent_backend"} <= set(value) <= expected,
         "invalid workflow",
     )
     require(
@@ -35,6 +37,7 @@ def validate_workflow(value):
     require(
         type(value["schema_version"]) is int and value["schema_version"] == 1, "workflow version"
     )
+    require(value.get("agent_backend", "local") in {"local", "rpc"}, "invalid agent backend")
     names = value["agents"]
     require(
         isinstance(names, list)

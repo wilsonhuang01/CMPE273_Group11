@@ -64,6 +64,46 @@ def risk_counts(sources):
     return counts
 
 
+def deterministic_review(context, before, after, rationale):
+    additions = risk_counts(after) - risk_counts(before)
+    findings = [
+        {
+            "code": "new-risky-operation",
+            "severity": "error",
+            "message": "New operation requires manual review: " + token,
+        }
+        for token in sorted(additions)
+    ]
+    if not findings:
+        findings.append(
+            {
+                "code": "static-review-limit",
+                "severity": "info",
+                "message": "No blocked additions. Static review cannot establish "
+                "equivalence; automated verification and benchmarks remain required.",
+            }
+        )
+    if any(
+        term in rationale.lower()
+        for term in ("guaranteed", "always faster", "skip tests", "proven equivalent")
+    ):
+        findings.append(
+            {
+                "code": "unsupported-claim",
+                "severity": "warning",
+                "message": "Optimization claims need independent evidence.",
+            }
+        )
+    response = {
+        "verdict": "reject" if additions else "approve",
+        "summary": "New high-risk operations require manual review."
+        if additions
+        else "No blocking source-risk findings.",
+        "findings": findings,
+    }
+    return response
+
+
 class CriticAgent:
     def __init__(self, repository, backend=None):
         self.repository, self.backend = repository, backend
@@ -92,42 +132,7 @@ class CriticAgent:
                     "critic backend may return verdict, summary and findings only",
                 )
             else:
-                additions = risk_counts(after) - risk_counts(before)
-                findings = [
-                    {
-                        "code": "new-risky-operation",
-                        "severity": "error",
-                        "message": "New operation requires manual review: " + token,
-                    }
-                    for token in sorted(additions)
-                ]
-                if not findings:
-                    findings.append(
-                        {
-                            "code": "static-review-limit",
-                            "severity": "info",
-                            "message": "No blocked additions. Static review cannot establish "
-                            "equivalence; automated verification and benchmarks remain required.",
-                        }
-                    )
-                if any(
-                    term in proposal.rationale.lower()
-                    for term in ("guaranteed", "always faster", "skip tests", "proven equivalent")
-                ):
-                    findings.append(
-                        {
-                            "code": "unsupported-claim",
-                            "severity": "warning",
-                            "message": "Optimization claims need independent evidence.",
-                        }
-                    )
-                response = {
-                    "verdict": "reject" if additions else "approve",
-                    "summary": "New high-risk operations require manual review."
-                    if additions
-                    else "No blocking source-risk findings.",
-                    "findings": findings,
-                }
+                response = deterministic_review(context, before, after, proposal.rationale)
             return validate_review({**context, "role": "critic", **response}, context, pb.CRITIC)
 
         record = AgentJournal(repository, pb.CRITIC).run(

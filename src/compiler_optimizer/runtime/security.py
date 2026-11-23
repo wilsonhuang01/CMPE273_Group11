@@ -20,6 +20,12 @@ def validate_rpc_security(settings):
     if bool(settings.rpc_tls_cert) != bool(settings.rpc_tls_key):
         raise ValueError("RPC_TLS_CERT and RPC_TLS_KEY must be configured together")
     validate_token(settings.api_token)
+    validate_token(settings.agent_token)
+    from compiler_optimizer.shared.agents_rpc import AGENT_NAMES
+
+    if settings.role in AGENT_NAMES and not is_loopback(settings.grpc_host):
+        if not (settings.api_token and settings.rpc_tls_cert and settings.rpc_tls_key):
+            raise ValueError("non-loopback agents require TLS and AGENT_API_TOKEN")
     if settings.role == "coordinator" and (
         settings.transfer_enabled or settings.execution_enabled or settings.fleet_enabled
     ):

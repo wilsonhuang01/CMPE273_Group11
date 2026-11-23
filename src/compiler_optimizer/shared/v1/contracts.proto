@@ -82,6 +82,17 @@ message OptimizationRequest {
   SubmissionManifest manifest = 4;
   SourceVersion source = 5;
   CompilerSettings compiler = 6;
+  optional ArtifactRef replay_patch = 7;
+}
+
+message AgentProvenance {
+  uint32 schema_version = 1;
+  AgentRole role = 2;
+  string service_id = 3;
+  string backend = 4;
+  string request_sha256 = 5;
+  string response_sha256 = 6;
+  string release = 7;
 }
 
 message Proposal {
@@ -92,6 +103,8 @@ message Proposal {
   string rationale = 5;
   string transformation = 6;
   CompilerSettings compiler = 7;
+  optional ArtifactRef structured_patch = 8;
+  optional AgentProvenance agent_provenance = 9;
 }
 
 message VerificationJob {
@@ -216,8 +229,40 @@ service CoordinatorService {
   rpc GetOptimizationResult(OptimizationQuery) returns (OptimizationResult);
 }
 
+// Inputs and outputs use the agent's own task-scoped content store. No shared database.
+message AgentArtifactFrame {
+  oneof frame {
+    ArtifactRequest header = 1;
+    bytes data = 2;
+  }
+}
+message AgentAssessmentRequest {
+  Metadata meta = 1;
+  AgentRole role = 2;
+  Submission submission = 3;
+  Proposal proposal = 4;
+  VerificationJob job = 5;
+  VerificationResult verification = 6;
+  optional ArtifactRef benchmark_plan = 7;
+}
+message AgentAssessment {
+  string record_json = 1;
+  AgentProvenance provenance = 2;
+}
+message AgentPing {}
+message AgentIdentity {
+  AgentRole role = 1;
+  string service_id = 2;
+  string backend = 3;
+  string release = 4;
+}
 service AgentService {
   rpc GenerateProposal(OptimizationRequest) returns (Proposal);
+  rpc Review(AgentAssessmentRequest) returns (AgentAssessment);
+  rpc PlanBenchmark(AgentAssessmentRequest) returns (AgentAssessment);
+  rpc PutArtifact(stream AgentArtifactFrame) returns (ArtifactRef);
+  rpc GetArtifact(ArtifactRequest) returns (stream ArtifactChunk);
+  rpc Ping(AgentPing) returns (AgentIdentity);
 }
 
 service WorkerHealthService {

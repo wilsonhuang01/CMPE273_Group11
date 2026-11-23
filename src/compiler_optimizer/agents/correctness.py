@@ -48,6 +48,26 @@ def checked_verification(repository, proposal, result):
     return report
 
 
+def deterministic_review(context, evidence, result):
+    passed = context["automated_passed"]
+    response = {
+        "verdict": "approve" if passed else "reject",
+        "summary": "Recorded fixed/generated tests and sanitizer checks passed."
+        if passed
+        else "Automated verification failed; candidate is rejected.",
+        "findings": [
+            {
+                "code": "bounded-evidence" if passed else "automated-failure",
+                "severity": "info" if passed else "error",
+                "message": "Approval covers the tested domain, not formal equivalence."
+                if passed
+                else pb.FailureReason.Name(result.failure.reason),
+            }
+        ],
+    }
+    return response
+
+
 class CorrectnessAgent:
     def __init__(self, repository, backend=None):
         self.repository, self.backend = repository, backend
@@ -67,22 +87,7 @@ class CorrectnessAgent:
                     "review backend may return verdict, summary and findings only",
                 )
             else:
-                passed = context["automated_passed"]
-                response = {
-                    "verdict": "approve" if passed else "reject",
-                    "summary": "Recorded fixed/generated tests and sanitizer checks passed."
-                    if passed
-                    else "Automated verification failed; candidate is rejected.",
-                    "findings": [
-                        {
-                            "code": "bounded-evidence" if passed else "automated-failure",
-                            "severity": "info" if passed else "error",
-                            "message": "Approval covers the tested domain, not formal equivalence."
-                            if passed
-                            else pb.FailureReason.Name(result.failure.reason),
-                        }
-                    ],
-                }
+                response = deterministic_review(context, evidence, result)
             return validate_review(
                 {**context, "role": "correctness", **response}, context, pb.CORRECTNESS
             )

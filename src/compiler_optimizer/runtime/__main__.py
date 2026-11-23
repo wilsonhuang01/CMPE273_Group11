@@ -22,6 +22,7 @@ from compiler_optimizer.runtime.security import BearerAuth, validate_rpc_securit
 from compiler_optimizer.runtime.transfer import ArtifactTransferService
 from compiler_optimizer.runtime.worker_health import WorkerHealthService
 from compiler_optimizer.scheduler.fleet import run_scheduler
+from compiler_optimizer.shared.agents_rpc import AGENT_NAMES
 from compiler_optimizer.shared.contracts import MAX_MESSAGE_BYTES
 from compiler_optimizer.shared.v1 import contracts_pb2_grpc as rpc
 from compiler_optimizer.shared.workflow import default_workflow
@@ -32,6 +33,10 @@ from compiler_optimizer.workers.remote import fleet_compiler
 
 def run(settings):
     validate_rpc_security(settings)
+    if settings.role in AGENT_NAMES:
+        from compiler_optimizer.runtime.agent import run_agent
+
+        return run_agent(settings)
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -46,6 +51,10 @@ def run(settings):
     if settings.role == "coordinator":
         repository = Repository(settings.state_directory)
         probes["storage"] = repository.check_health
+        if settings.agent_backend == "rpc":
+            from compiler_optimizer.agents.rpc_client import AgentClient
+
+            probes["agents"] = AgentClient(repository, settings).check_health
         executor = ThreadPoolExecutor(max_workers=4)
         grpc_server = grpc.server(
             executor,
@@ -62,6 +71,7 @@ def run(settings):
             workflow_configuration={
                 **default_workflow(),
                 "execution_backend": settings.execution_backend,
+                "agent_backend": settings.agent_backend,
             },
         )
         rpc.add_CoordinatorServiceServicer_to_server(coordinator, grpc_server)
@@ -171,7 +181,9 @@ def run(settings):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--role", required=True, choices=("coordinator", "scheduler", "worker"))
+    parser.add_argument(
+        "--role", required=True, choices=("coordinator", "scheduler", "worker", *AGENT_NAMES)
+    )
     args = parser.parse_args()
     configure_logging()
     run(Settings.from_env(args.role))

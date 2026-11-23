@@ -197,12 +197,67 @@ class AgentServiceStub(object):
                 request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.OptimizationRequest.SerializeToString,
                 response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.Proposal.FromString,
                 _registered_method=True)
+        self.Review = channel.unary_unary(
+                '/compiler_optimizer.v1.AgentService/Review',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessmentRequest.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessment.FromString,
+                _registered_method=True)
+        self.PlanBenchmark = channel.unary_unary(
+                '/compiler_optimizer.v1.AgentService/PlanBenchmark',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessmentRequest.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessment.FromString,
+                _registered_method=True)
+        self.PutArtifact = channel.stream_unary(
+                '/compiler_optimizer.v1.AgentService/PutArtifact',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentArtifactFrame.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRef.FromString,
+                _registered_method=True)
+        self.GetArtifact = channel.unary_stream(
+                '/compiler_optimizer.v1.AgentService/GetArtifact',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRequest.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactChunk.FromString,
+                _registered_method=True)
+        self.Ping = channel.unary_unary(
+                '/compiler_optimizer.v1.AgentService/Ping',
+                request_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentPing.SerializeToString,
+                response_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentIdentity.FromString,
+                _registered_method=True)
 
 
 class AgentServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def GenerateProposal(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Review(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PlanBenchmark(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PutArtifact(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetArtifact(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Ping(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -215,6 +270,31 @@ def add_AgentServiceServicer_to_server(servicer, server):
                     servicer.GenerateProposal,
                     request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.OptimizationRequest.FromString,
                     response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.Proposal.SerializeToString,
+            ),
+            'Review': grpc.unary_unary_rpc_method_handler(
+                    servicer.Review,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessmentRequest.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessment.SerializeToString,
+            ),
+            'PlanBenchmark': grpc.unary_unary_rpc_method_handler(
+                    servicer.PlanBenchmark,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessmentRequest.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessment.SerializeToString,
+            ),
+            'PutArtifact': grpc.stream_unary_rpc_method_handler(
+                    servicer.PutArtifact,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentArtifactFrame.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRef.SerializeToString,
+            ),
+            'GetArtifact': grpc.unary_stream_rpc_method_handler(
+                    servicer.GetArtifact,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRequest.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactChunk.SerializeToString,
+            ),
+            'Ping': grpc.unary_unary_rpc_method_handler(
+                    servicer.Ping,
+                    request_deserializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentPing.FromString,
+                    response_serializer=compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentIdentity.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -244,6 +324,141 @@ class AgentService(object):
             '/compiler_optimizer.v1.AgentService/GenerateProposal',
             compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.OptimizationRequest.SerializeToString,
             compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.Proposal.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Review(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.AgentService/Review',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessmentRequest.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessment.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PlanBenchmark(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.AgentService/PlanBenchmark',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessmentRequest.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentAssessment.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PutArtifact(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_unary(
+            request_iterator,
+            target,
+            '/compiler_optimizer.v1.AgentService/PutArtifact',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentArtifactFrame.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRef.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetArtifact(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/compiler_optimizer.v1.AgentService/GetArtifact',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactRequest.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.ArtifactChunk.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Ping(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/compiler_optimizer.v1.AgentService/Ping',
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentPing.SerializeToString,
+            compiler__optimizer_dot_shared_dot_v1_dot_contracts__pb2.AgentIdentity.FromString,
             options,
             channel_credentials,
             insecure,

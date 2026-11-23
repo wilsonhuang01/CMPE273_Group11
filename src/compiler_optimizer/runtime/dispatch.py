@@ -4,7 +4,9 @@ import json
 import logging
 import re
 import time
+from dataclasses import replace
 
+from compiler_optimizer.agents.rpc_client import configured_client
 from compiler_optimizer.coordinator.round import CohortCoordinator
 from compiler_optimizer.monitoring.watchdog import read_json, remove_owned
 from compiler_optimizer.runtime.proposal_queue import RabbitProposalQueue
@@ -169,6 +171,9 @@ class SubmissionDispatcher:
             runner,
             self.broker_factory(),
             recovery=self.recovery_factory(runner, RecoveryPolicy.parse(config["recovery_policy"])),
+            agent_client=configured_client(
+                repo, replace(self.settings, agent_backend=config.get("agent_backend", "local"))
+            ),
         )
         options = {}
         if repo.get_selection_session(task_id) is None:

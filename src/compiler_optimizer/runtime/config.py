@@ -1,11 +1,14 @@
 """Environment-only configuration; credential values are excluded from repr."""
 
+import json
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from compiler_optimizer.runtime.security import validate_rpc_security
+from compiler_optimizer.shared.agents_rpc import AGENT_NAMES, AGENT_PORTS
 
 
 @dataclass(frozen=True)
@@ -40,10 +43,20 @@ class Settings:
     worker_directory: Path = Path("var/worker")
     worker_target: str = "auto"
 
+    agent_backend: str = "local"
+    agent_endpoints: str = ""
+    agent_timeout_seconds: float = 15.0
+    agent_token: str = field(default="", repr=False)
+    agent_tls: bool = False
+    agent_ca_directory: Path | None = None
+    agent_dev_tls: bool = False
+    agent_tls_directory: Path | None = None
+    agent_release: str = "0.1.0"
+
     @classmethod
     def from_env(cls, role: str, environ=None):
         env = os.environ if environ is None else environ
-        if role not in ("coordinator", "scheduler", "worker"):
+        if role not in ("coordinator", "scheduler", "worker", *AGENT_NAMES):
             raise ValueError("unknown service role")
 
         def number(name, default, maximum=65535):
@@ -104,21 +117,50 @@ class Settings:
             raise ValueError("unsupported WORKER_TARGET")
         if role == "coordinator" and backend == "remote" and not switches["FLEET_ENABLED"]:
             raise ValueError("remote execution requires FLEET_ENABLED")
+        agent_backend = env.get("AGENT_BACKEND", "local")
+        if agent_backend not in ("local", "rpc"):
+            raise ValueError("AGENT_BACKEND must be local or rpc")
+        endpoints = env.get("AGENT_ENDPOINTS", "")
+        if endpoints:
+            parsed_endpoints = json.loads(endpoints)
+            if not isinstance(parsed_endpoints, dict) or set(parsed_endpoints) != set(AGENT_NAMES):
+                raise ValueError("AGENT_ENDPOINTS must configure exactly six roles")
+            for endpoint in parsed_endpoints.values():
+                if not isinstance(endpoint, str) or not endpoint.rpartition(":")[2].isdigit():
+                    raise ValueError("invalid agent endpoint")
+        timeout = float(env.get("AGENT_TIMEOUT_SECONDS", "15"))
+        if not math.isfinite(timeout) or not 0.05 <= timeout <= 120:
+            raise ValueError("AGENT_TIMEOUT_SECONDS must be 0.05–120")
+        for key in ("AGENT_TLS", "AGENT_DEV_TLS"):
+            if env.get(key, "false") not in ("true", "false"):
+                raise ValueError(key + " must be true or false")
+        dev_tls = env.get("AGENT_DEV_TLS", "false") == "true"
+        if dev_tls and role not in AGENT_NAMES:
+            raise ValueError("AGENT_DEV_TLS is only valid for agent processes")
+        tls_directory = Path(env.get("AGENT_TLS_DIRECTORY", "var/agent-tls")) if dev_tls else None
         settings = cls(
             role=role,
             **values,
             rabbitmq_port=number("RABBITMQ_PORT", 5672),
             redis_port=number("REDIS_PORT", 6379),
-            health_port=number("HEALTH_PORT", 8080),
-            grpc_port=number("GRPC_PORT", 50051),
+            health_port=number(
+                "HEALTH_PORT", 18091 + AGENT_NAMES.index(role) if role in AGENT_NAMES else 8080
+            ),
+            grpc_port=number("GRPC_PORT", AGENT_PORTS.get(role, 50051)),
             probe_interval_seconds=number("PROBE_INTERVAL_SECONDS", 5, 60),
             coordinator_health_url=url,
             state_directory=Path(env.get("STATE_DIRECTORY", "var")),
             execution_enabled=execution == "true",
             transfer_enabled=transfer == "true",
-            api_token=env.get("OPTIMIZER_API_TOKEN", ""),
-            rpc_tls_cert=Path(env["RPC_TLS_CERT"]) if env.get("RPC_TLS_CERT") else None,
-            rpc_tls_key=Path(env["RPC_TLS_KEY"]) if env.get("RPC_TLS_KEY") else None,
+            api_token=env.get("AGENT_API_TOKEN", "")
+            if role in AGENT_NAMES
+            else env.get("OPTIMIZER_API_TOKEN", ""),
+            rpc_tls_cert=(tls_directory / (role + ".crt"))
+            if dev_tls
+            else (Path(env["RPC_TLS_CERT"]) if env.get("RPC_TLS_CERT") else None),
+            rpc_tls_key=(tls_directory / (role + ".key"))
+            if dev_tls
+            else (Path(env["RPC_TLS_KEY"]) if env.get("RPC_TLS_KEY") else None),
             execution_backend=backend,
             fleet_enabled=switches["FLEET_ENABLED"],
             service_enabled=switches["SERVICE_ENABLED"],
@@ -127,6 +169,17 @@ class Settings:
             coordinator_ca=Path(env["COORDINATOR_CA"]) if env.get("COORDINATOR_CA") else None,
             worker_directory=Path(env.get("WORKER_DIRECTORY", "var/worker")),
             worker_target=target,
+            agent_backend=agent_backend,
+            agent_endpoints=endpoints,
+            agent_timeout_seconds=timeout,
+            agent_token=env.get("AGENT_API_TOKEN", ""),
+            agent_tls=env.get("AGENT_TLS", "false") == "true",
+            agent_ca_directory=Path(env["AGENT_CA_DIRECTORY"])
+            if env.get("AGENT_CA_DIRECTORY")
+            else None,
+            agent_dev_tls=dev_tls,
+            agent_tls_directory=tls_directory,
+            agent_release=env.get("AGENT_RELEASE", "0.1.0"),
         )
         validate_rpc_security(settings)
         return settings

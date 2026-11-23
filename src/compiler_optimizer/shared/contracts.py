@@ -230,6 +230,25 @@ def validate_message(message: Message) -> None:
             require(message.source.version > 1, "proposal must derive from a parent source")
             require(0 < len(message.rationale.encode()) <= 16384, "rationale must be 1–16384 bytes")
             require(bool(TEST_ID.fullmatch(message.transformation)), "invalid transformation ID")
+            require(
+                message.HasField("structured_patch") == message.HasField("agent_provenance"),
+                "agent patch and provenance must be supplied together",
+            )
+            if message.HasField("structured_patch"):
+                _artifact(message.structured_patch, nonempty=True)
+                evidence = message.agent_provenance
+                _uuid(evidence.service_id, "agent service_id")
+                require(
+                    evidence.schema_version == 1
+                    and evidence.role == message.role
+                    and evidence.backend in ("deterministic-v1", "replay-v1")
+                    and 0 < len(evidence.release.encode()) <= 128
+                    and SHA256.fullmatch(evidence.request_sha256)
+                    and SHA256.fullmatch(evidence.response_sha256),
+                    "invalid agent provenance",
+                )
+        elif message.HasField("replay_patch"):
+            _artifact(message.replay_patch, nonempty=True)
     elif isinstance(message, (pb.VerificationJob, pb.VerificationResult)):
         _uuid(message.job_id, "job_id")
         _subject(message)

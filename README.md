@@ -146,6 +146,14 @@ python -m compiler_optimizer.coordinator.round \
 
 The original program is retained when no candidate shows a reliable weighted gain.
 
+## Agent RPC services
+
+Compose starts six independent agent services with private state, authenticated TLS,
+bounded calls and backend provenance. The coordinator revalidates every result
+before acceptance. See [agent RPC setup and contracts](docs/agent-rpc.md) to enable
+RPC for a host coordinator. Deterministic/replay backends work without model weights;
+model provider integration remains Action G.
+
 ## Concurrent preparation
 
 Cohorts use Docker CPU/memory capacity with explicit headroom to bound concurrent

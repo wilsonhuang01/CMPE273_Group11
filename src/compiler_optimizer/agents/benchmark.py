@@ -10,8 +10,8 @@ from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 
 
 class BenchmarkAgent:
-    def __init__(self, repository):
-        self.repository = repository
+    def __init__(self, repository, backend=None):
+        self.repository, self.backend = repository, backend
 
     def organize(self, proposal, result, plan_ref):
         repository = self.repository
@@ -31,7 +31,14 @@ class BenchmarkAgent:
             task["submission"], proposal, job, result, correctness, plan, plan_ref
         )
         work = AgentJournal(repository, pb.BENCHMARK).run(
-            task_id, review_operation(proposal, result), expected, lambda: expected
+            task_id,
+            review_operation(proposal, result),
+            expected,
+            lambda: (
+                self.backend.plan(proposal, result, plan_ref, expected)
+                if self.backend
+                else expected
+            ),
         )
         require(work == expected, "cached measurement work differs from frozen inputs")
         return work

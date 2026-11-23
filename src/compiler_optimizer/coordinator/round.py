@@ -67,6 +67,7 @@ class CohortCoordinator:
         review_backends=None,
         recovery=None,
         concurrency=8,
+        agent_client=None,
     ):
         self.repository, self.runner, self.broker = repository, runner, broker
         self.backends, self.review_backends = dict(backends or {}), dict(review_backends or {})
@@ -75,7 +76,16 @@ class CohortCoordinator:
             "unknown generator backend",
         )
         require(set(self.review_backends) <= {"correctness", "critic"}, "unknown reviewer backend")
+        if agent_client is not None:
+            require(
+                not self.review_backends, "RPC review adapters are configured by their services"
+            )
+            self.review_backends = {
+                name: agent_client.reviewer(role)
+                for name, role in (("correctness", pb.CORRECTNESS), ("critic", pb.CRITIC))
+            }
         self.last_task_id = None
+        self.agent_client = agent_client
         self.recovery = recovery
         require(type(concurrency) is int and 1 <= concurrency <= 8, "concurrency must be 1–8")
         self.concurrency = concurrency
@@ -278,7 +288,17 @@ class CohortCoordinator:
             require(backend is not None, "resume requires the original custom backend adapter")
         backend = backend or starter()
         try:
-            agent = agent_type(repository.artifacts, backend)
+            if self.agent_client is not None:
+                require(
+                    member["backend_kind"] != "custom",
+                    "RPC generators require a frozen replay patch for custom proposals",
+                )
+                patch = (
+                    pb.ArtifactRef(**member["backend_patch"]) if member["backend_patch"] else None
+                )
+                agent = self.agent_client.generator(request.role, patch)
+            else:
+                agent = agent_type(repository.artifacts, backend)
             window = (
                 self.runner.work_window(memory_mib=self._reservation_mib)
                 if hasattr(self.runner, "work_window")
@@ -372,6 +392,10 @@ class CohortCoordinator:
             p for p in repository.list_proposals(task_id) if p.proposal_id == proposal.proposal_id
         )
         require(encode_message(stored) == encode_message(proposal), "cohort proposal was altered")
+        require(
+            proposal.HasField("agent_provenance") == (self.agent_client is not None),
+            "resume requires the original local/RPC agent transport",
+        )
         progress = next(
             (
                 p
@@ -410,6 +434,7 @@ class CohortCoordinator:
                 review_backends=self.review_backends,
                 configuration=config,
                 recovery=self.recovery,
+                agent_client=self.agent_client,
                 verification_only=verification_only,
             )
         except RecoveryTerminal as error:
@@ -501,6 +526,8 @@ def main():
             repository.cancel_cohort(args.task_id)
             print(json.dumps({"task_id": args.task_id, "status": "cancellation_requested"}))
             return 0
+        from compiler_optimizer.agents.rpc_client import configured_client
+
         coordinator = CohortCoordinator(
             repository,
             DockerRunner(
@@ -510,6 +537,7 @@ def main():
             ),
             RabbitProposalQueue(Settings.from_env("coordinator")),
             backends=backends,
+            agent_client=configured_client(repository),
         )
         require(1 <= args.workers <= 8, "worker pool size must be 1–8")
         coordinator.recovery = RecoveryController.local(
