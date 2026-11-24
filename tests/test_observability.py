@@ -127,3 +127,139 @@ def test_metrics_endpoint_and_scrape_failure_are_independent_of_liveness(tmp_pat
         server.shutdown()
         server.server_close()
         thread.join(timeout=3)
+
+
+@pytest.fixture
+def checker(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    spec = importlib.util.spec_from_file_location(
+        "check_observability", Path(__file__).parents[1] / "tools/check_observability.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    clock = [0.0]
+    monkeypatch.setattr(
+        module,
+        "time",
+        SimpleNamespace(
+            monotonic=lambda: clock[0],
+            sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+        ),
+    )
+    return module, clock
+
+
+DATASOURCE = {"uid": "optimizer-prometheus", "type": "prometheus", "url": "http://prometheus:9090"}
+QUERY_RESULT = {
+    "results": {
+        "A": {
+            "status": 200,
+            "frames": [
+                {
+                    "schema": {"fields": [{"type": "time"}, {"type": "number"}]},
+                    "data": {"values": [[1234567890], [1]]},
+                }
+            ],
+        }
+    }
+}
+
+
+def test_grafana_check_runs_real_backend_query_without_optional_health_route(checker, monkeypatch):
+    from unittest.mock import Mock
+
+    module, _ = checker
+    request = Mock(side_effect=[DATASOURCE, QUERY_RESULT])
+    monkeypatch.setattr(module, "request_json", request)
+    module.check_grafana_datasource("http://grafana", "test:password")
+    calls = request.call_args_list
+    assert [call.args[0] for call in calls] == [
+        "http://grafana/api/datasources/uid/optimizer-prometheus",
+        "http://grafana/api/ds/query",
+    ]
+    body = calls[1].kwargs["body"]
+    assert body["queries"][0]["datasource"]["uid"] == "optimizer-prometheus"
+    assert body["queries"][0]["expr"] == "vector(1)"
+    assert all(call.kwargs["auth"] == "test:password" for call in calls)
+
+
+@pytest.mark.parametrize("status", [404, 503])
+def test_grafana_query_waits_for_provisioning_or_plugin_startup(checker, monkeypatch, status):
+    from unittest.mock import Mock
+
+    module, clock = checker
+    pending = HTTPError("http://grafana/api/ds/query", status, "not ready", {}, None)
+    request = Mock(side_effect=[DATASOURCE, pending, DATASOURCE, QUERY_RESULT])
+    monkeypatch.setattr(module, "request_json", request)
+    module.check_grafana_datasource("http://grafana", "test:password", ready_timeout=3)
+    assert clock[0] == 1 and request.call_count == 4
+
+
+def test_missing_grafana_datasource_remains_a_failure_after_bounded_wait(checker, monkeypatch):
+    from unittest.mock import Mock
+
+    module, clock = checker
+    missing = HTTPError(
+        "http://grafana/api/datasources/uid/optimizer-prometheus", 404, "not found", {}, None
+    )
+    request = Mock(side_effect=missing)
+    monkeypatch.setattr(module, "request_json", request)
+    with pytest.raises(RuntimeError, match="did not become ready") as error:
+        module.check_grafana_datasource("http://grafana", "test:password", ready_timeout=2)
+    assert error.value.__cause__ is missing
+    assert request.call_count == 2 and clock[0] == 2
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_grafana_auth_errors_are_not_retried(checker, monkeypatch, status):
+    from unittest.mock import Mock
+
+    module, clock = checker
+    request = Mock(side_effect=HTTPError("http://grafana", status, "denied", {}, None))
+    monkeypatch.setattr(module, "request_json", request)
+    with pytest.raises(HTTPError):
+        module.check_grafana_datasource("http://grafana", "test:password")
+    assert request.call_count == 1 and clock[0] == 0
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        {"status": 200, "frames": []},
+        {"status": 200, "error": "backend failure"},
+        {"status": 500, "frames": []},
+    ],
+)
+def test_grafana_query_error_or_missing_data_cannot_pass(checker, monkeypatch, query):
+    from unittest.mock import Mock
+
+    module, _ = checker
+    monkeypatch.setattr(
+        module, "request_json", Mock(side_effect=[DATASOURCE, {"results": {"A": query}}])
+    )
+    with pytest.raises(AssertionError, match="Grafana Prometheus query"):
+        module.check_grafana_datasource("http://grafana", "test:password")
+
+
+def test_grafana_query_http_request_uses_json_post_and_basic_auth(checker, monkeypatch):
+    import base64
+    import io
+    from unittest.mock import Mock
+
+    module, _ = checker
+    opener = Mock(return_value=io.BytesIO(b'{"results": {}}'))
+    monkeypatch.setattr(module, "urlopen", opener)
+    body = {"queries": [{"expr": "vector(1)"}]}
+    assert module.request_json("http://grafana/api/ds/query", auth="test:password", body=body) == {
+        "results": {}
+    }
+    request = opener.call_args.args[0]
+    assert request.get_method() == "POST" and json.loads(request.data) == body
+    assert request.get_header("Content-type") == "application/json"
+    assert (
+        request.get_header("Authorization")
+        == "Basic " + base64.b64encode(b"test:password").decode()
+    )
