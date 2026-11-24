@@ -64,12 +64,12 @@ footer ul { padding-left:20px; }
 <body>
 <main>
 <header>
-<p class="eyebrow">CMPE 273 · Distributed compiler optimizer · Updated November 23, 2026</p>
+<p class="eyebrow">CMPE 273 · Distributed compiler optimizer · Updated November 24, 2026</p>
 <h1>Implementation backlog</h1>
 <p class="lead">Build the compiler optimizer from a Mac development environment through autonomous services, AI optimization, compiler transformations and deployment on AWS.</p>
-<p class="meta">Repository documentation · <a href="../README.md">Project README</a> · Action A was delivered in commit <code>90c47d4</code>; actions B–G are now implemented. Later actions remain planned.</p>
+<p class="meta">Repository documentation · <a href="../README.md">Project README</a> · Action A was delivered in commit <code>90c47d4</code>; actions B–I are now implemented. Later actions remain planned.</p>
 </header>
-<div class="overview" aria-label="Backlog summary"><div><strong>24</strong><span>documented actions</span></div><div><strong>7</strong><span>implemented actions</span></div><div><strong>17</strong><span>planned actions</span></div><div><strong>5</strong><span>areas of work</span></div></div>
+<div class="overview" aria-label="Backlog summary"><div><strong>24</strong><span>documented actions</span></div><div><strong>9</strong><span>implemented actions</span></div><div><strong>15</strong><span>planned actions</span></div><div><strong>5</strong><span>areas of work</span></div></div>
 <p class="meta">Development assumes macOS on Apple silicon or Intel, Python 3.11+ and Docker with Compose. Select compiler images and worker profiles for the detected architecture. Live AI calls require a configured model endpoint; AWS deployment requires an AWS account, region, credentials and service quotas. All AWS work below is planned.</p>
 <nav aria-label="Backlog areas"><a href="#execution-services">Execution services</a><a href="#agents-and-optimization">Agents and optimization</a><a href="#compiler-and-validation">Compiler and validation</a><a href="#evidence-and-delivery">Evidence and delivery</a><a href="#aws-deployment">AWS deployment</a><a href="#hardware">Hardware validation</a></nav>
 <section class="order" aria-label="Dependency overview"><strong>Suggested dependency order</strong><p>A → B → C → D/E for execution services. B → F → G → H/I for agents and search. I → J → K for compiler transformations, with L/M/N extending validation, benchmarking and target coverage. O accompanies each change; P evaluates the completed configurations. Q establishes AWS infrastructure; R/S prepare shared services and releases; T/U deploy the control plane and workers; V/W cover operations and recovery. X adds optional NVIDIA execution after the CPU deployment is validated.</p><p class="meta">Letters A–X are stable action identifiers used in dependency links. Actions A–C implement automatic submission, artifact transfer and independent scheduler/worker processes. Use the remote execution backend to delegate sandbox work to the fleet.</p></section>
