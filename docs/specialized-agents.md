@@ -8,7 +8,7 @@ The existing Performance workflow now supports Memory and Architecture candidate
 generators, required Correctness and Critic reviewers, and a Benchmark Agent that
 organizes measurements. All six roles are implemented and covered by role-specific
 and end-to-end tests. Default backends are deterministic rules/evidence checks. They do not call
-an external LLM. Trusted Python backend adapters can supply generated patches or
+an external LLM unless [model-backed agents](model-agents.md) are configured. Trusted Python backend adapters can supply generated patches or
 reviews; their structured outputs pass the same validation and acceptance gates.
 
 ## Run a generator

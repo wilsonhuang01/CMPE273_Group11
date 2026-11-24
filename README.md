@@ -152,7 +152,7 @@ Compose starts six independent agent services with private state, authenticated 
 bounded calls and backend provenance. The coordinator revalidates every result
 before acceptance. See [agent RPC setup and contracts](docs/agent-rpc.md) to enable
 RPC for a host coordinator. Deterministic/replay backends work without model weights;
-model provider integration remains Action G.
+[model-backed agents](docs/model-agents.md) can call Amazon Bedrock instead.
 
 ## Concurrent preparation
 

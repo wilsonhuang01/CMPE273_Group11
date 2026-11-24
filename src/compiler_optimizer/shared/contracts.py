@@ -20,6 +20,12 @@ MAX_MESSAGE_BYTES = 1024 * 1024
 BASE_FLAGS = list(X86.flags)
 SHA256 = re.compile(r"[0-9a-f]{64}")
 TEST_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+MODEL_BACKEND = re.compile(r"model-v1:[a-z0-9-]{1,32}:[A-Za-z0-9._:/-]{1,200}")
+
+
+def valid_backend(name):
+    """Deterministic rules, replayed patches, or a model identity (provider and model ID)."""
+    return name in ("deterministic-v1", "replay-v1") or MODEL_BACKEND.fullmatch(name) is not None
 
 
 def _uuid(value: str, name: str) -> None:
@@ -241,7 +247,7 @@ def validate_message(message: Message) -> None:
                 require(
                     evidence.schema_version == 1
                     and evidence.role == message.role
-                    and evidence.backend in ("deterministic-v1", "replay-v1")
+                    and valid_backend(evidence.backend)
                     and 0 < len(evidence.release.encode()) <= 128
                     and SHA256.fullmatch(evidence.request_sha256)
                     and SHA256.fullmatch(evidence.response_sha256),

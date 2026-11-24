@@ -1,9 +1,10 @@
 # Agent RPC services
 
 Action F runs Performance, Memory, Architecture, Correctness, Critic and Benchmark
-as independent gRPC services. The existing deterministic rules and frozen patch
-replay remain the backends. Model providers and model hosting belong to Action G;
-no model-hosting application or model weights are required here.
+as independent gRPC services. The default backends are the deterministic rules and frozen patch replay;
+no model-hosting application or model weights are required. Generator and reviewer
+services can instead call a hosted model (Amazon Bedrock or recorded replies); see
+[model-backed agents](model-agents.md).
 
 ## Run the Docker services
 

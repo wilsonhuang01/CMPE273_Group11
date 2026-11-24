@@ -1,12 +1,15 @@
 """Private per-service artifact catalog and durable agent operation deduplication."""
 
 import fcntl
+import json
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+from compiler_optimizer.agents.model import ModelBudgetExceeded
 from compiler_optimizer.shared.agents_rpc import MAX_AGENT_ARTIFACT_BYTES
 from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.transfer import validate_reference, validate_task_id
@@ -41,6 +44,18 @@ class AgentStore:
             )
             db.execute(
                 "UPDATE operations SET state='failed',error='owner_restart' WHERE state='running'"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS model_calls(call_id INTEGER PRIMARY KEY,"
+                "task_id TEXT NOT NULL,role TEXT NOT NULL,purpose TEXT NOT NULL,"
+                "backend TEXT NOT NULL,prompt_sha256 TEXT NOT NULL,prompt_key TEXT NOT NULL,"
+                "prompt_size_bytes INTEGER NOT NULL,state TEXT NOT NULL,response_sha256 TEXT,"
+                "response_key TEXT,response_size_bytes INTEGER,"
+                "input_tokens INTEGER NOT NULL DEFAULT 0,output_tokens INTEGER NOT NULL DEFAULT 0,"
+                "stop_reason TEXT,error TEXT,latency_ms INTEGER,created_unix_ms INTEGER NOT NULL)"
+            )
+            db.execute(
+                "UPDATE model_calls SET state='failed',error='owner_restart' WHERE state='running'"
             )
 
     def close(self):
@@ -124,6 +139,84 @@ class AgentStore:
                 "WHERE task_id=? AND operation=? AND state='running'",
                 ("completed" if error is None else "failed", response, error, task_id, operation),
             )
+
+    def reserve_model_call(self, task_id, role, purpose, backend, prompt, *, max_calls, max_tokens):
+        """Atomically admit one model call under the task's call/token budget."""
+        validate_task_id(task_id)
+        ref = self.artifacts.put(prompt)
+        self.attach(task_id, ref)
+        with self.transaction() as db:
+            calls, tokens = db.execute(
+                "SELECT COUNT(*),COALESCE(SUM(input_tokens+output_tokens),0) "
+                "FROM model_calls WHERE task_id=?",
+                (task_id,),
+            ).fetchone()
+            if calls >= max_calls:
+                raise ModelBudgetExceeded("task model call budget exhausted")
+            if tokens >= max_tokens:
+                raise ModelBudgetExceeded("task model token budget exhausted")
+            cursor = db.execute(
+                "INSERT INTO model_calls(task_id,role,purpose,backend,prompt_sha256,prompt_key,"
+                "prompt_size_bytes,state,created_unix_ms) VALUES(?,?,?,?,?,?,?,'running',?)",
+                (
+                    task_id,
+                    role,
+                    purpose[:256],
+                    backend,
+                    ref.sha256,
+                    ref.key,
+                    ref.size_bytes,
+                    int(time.time() * 1000),
+                ),
+            )
+            return task_id, cursor.lastrowid
+
+    def finish_model_call(self, call, *, status, reply=None, error=None, latency_ms=0):
+        task_id, call_id = call
+        response_ref = None
+        if reply is not None:
+            response_ref = self.artifacts.put(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "text": reply.text,
+                        "input_tokens": reply.input_tokens,
+                        "output_tokens": reply.output_tokens,
+                        "stop_reason": reply.stop_reason,
+                    },
+                    sort_keys=True,
+                ).encode()
+            )
+            self.attach(task_id, response_ref)
+        with self.transaction() as db:
+            db.execute(
+                "UPDATE model_calls SET state=?,response_sha256=?,response_key=?,"
+                "response_size_bytes=?,input_tokens=?,"
+                "output_tokens=?,stop_reason=?,error=?,latency_ms=? "
+                "WHERE call_id=? AND state='running'",
+                (
+                    status,
+                    response_ref.sha256 if response_ref else None,
+                    response_ref.key if response_ref else None,
+                    response_ref.size_bytes if response_ref else None,
+                    reply.input_tokens if reply else 0,
+                    reply.output_tokens if reply else 0,
+                    reply.stop_reason if reply else None,
+                    (error or "")[:256] or None,
+                    latency_ms,
+                    call_id,
+                ),
+            )
+
+    def list_model_calls(self, task_id):
+        validate_task_id(task_id)
+        with self.transaction() as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM model_calls WHERE task_id=? ORDER BY call_id", (task_id,)
+                )
+            ]
 
     def task_artifacts(self, task_id):
         store = self

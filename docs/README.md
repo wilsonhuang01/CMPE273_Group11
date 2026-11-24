@@ -76,6 +76,7 @@ contracts, not validated hardware recovery.
   and acceptance gates.
 - [Single-proposal pipeline](performance-pipeline.md),
   [specialized agents](specialized-agents.md),
+  [model-backed agents](model-agents.md),
   [coordinator selection](coordinator-selection.md) and
   [fault recovery](fault-recovery.md): orchestration and failure behavior.
 - [Architecture support](architectures.md) and [evaluation/release](evaluation.md):

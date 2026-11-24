@@ -12,6 +12,13 @@ from compiler_optimizer.agents.correctness import deterministic_review as correc
 from compiler_optimizer.agents.critic import deterministic_review as critic_review
 from compiler_optimizer.agents.generation import SourcePatchAgent
 from compiler_optimizer.agents.memory import ExampleMemoryBackend, MemoryAgent
+from compiler_optimizer.agents.model import (
+    ModelBudgetExceeded,
+    ModelOutputError,
+    ModelUnavailable,
+    call_deadline,
+)
+from compiler_optimizer.agents.model_backends import model_backend
 from compiler_optimizer.agents.performance import ExamplePerformanceBackend, PerformanceAgent
 from compiler_optimizer.agents.rpc_store import AgentStore
 from compiler_optimizer.shared.agent_roles import role_spec
@@ -65,6 +72,12 @@ def agent_errors(context):
         context.abort(grpc.StatusCode.DATA_LOSS, "agent artifact integrity check failed")
     except TimeoutError:
         context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "agent call deadline expired")
+    except ModelBudgetExceeded as error:
+        context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, str(error)[:200])
+    except ModelUnavailable as error:
+        context.abort(grpc.StatusCode.UNAVAILABLE, "model unavailable: " + str(error)[:200])
+    except ModelOutputError as error:
+        context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error)[:300])
     except (ContractError, ValueError, TypeError, KeyError, StopIteration):
         context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid agent request or evidence")
     except OSError:
@@ -98,10 +111,16 @@ class EvidenceView:
 
 
 class AgentService(rpc.AgentServiceServicer):
-    def __init__(self, root, role, *, backend=None, release="0.1.0"):
+    def __init__(self, root, role, *, backend=None, release="0.1.0", model=None, provider=None):
         role_spec(role)
         require(0 < len(release.encode()) <= 128, "invalid agent release")
         self.store, self.role, self.backend, self.release = AgentStore(root), role, backend, release
+        self.backend_name, self.model_check = "deterministic-v1", None
+        if backend is None and model is not None and model.enabled:
+            self.backend = model_backend(role, model, self.store, provider)
+            if self.backend is not None:
+                self.backend_name = self.backend.client.backend_name
+                self.model_check = self.backend.client.provider.check
 
     def close(self):
         self.store.close()
@@ -111,7 +130,7 @@ class AgentService(rpc.AgentServiceServicer):
         return pb.AgentIdentity(
             role=self.role,
             service_id=self.store.service_id,
-            backend="deterministic-v1",
+            backend=self.backend_name,
             release=self.release,
         )
 
@@ -173,12 +192,13 @@ class AgentService(rpc.AgentServiceServicer):
             if cached is not None:
                 return response_type.FromString(cached)
             try:
-                response = action()
+                with call_deadline(max(0.0, context.time_remaining() or 0.0)):
+                    response = action()
                 provenance = pb.AgentProvenance(
                     schema_version=1,
                     role=self.role,
                     service_id=self.store.service_id,
-                    backend="replay-v1" if replay else "deterministic-v1",
+                    backend="replay-v1" if replay else self.backend_name,
                     release=self.release,
                     request_sha256=digest,
                     response_sha256=sha(payload(response)),
@@ -247,11 +267,19 @@ class AgentService(rpc.AgentServiceServicer):
                 view, evidence = self._assessment(request)
                 bound = review_context(request.proposal, request.verification)
                 if self.role == pb.CORRECTNESS:
-                    value = (
-                        self.backend.review(bound, evidence)
-                        if self.backend
-                        else correctness_review(bound, evidence, request.verification)
-                    )
+                    if self.backend is None:
+                        value = correctness_review(bound, evidence, request.verification)
+                    elif getattr(self.backend, "accepts_change", False):
+                        before = unbundle(view.artifacts.get(request.submission.source.bundle))
+                        after = unbundle(view.artifacts.get(request.proposal.source.bundle))
+                        change = {
+                            "rationale": request.proposal.rationale,
+                            "before": dict(before),
+                            "after": dict(after),
+                        }
+                        value = self.backend.review(bound, evidence, change)
+                    else:
+                        value = self.backend.review(bound, evidence)
                 else:
                     before = unbundle(view.artifacts.get(request.submission.source.bundle))
                     after = unbundle(view.artifacts.get(request.proposal.source.bundle))

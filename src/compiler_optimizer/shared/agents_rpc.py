@@ -5,7 +5,11 @@ import json
 from uuid import UUID
 
 from compiler_optimizer.shared.agent_roles import ROLES
-from compiler_optimizer.shared.contracts import MAX_MESSAGE_BYTES, validate_message
+from compiler_optimizer.shared.contracts import (  # noqa: F401 (valid_backend is re-exported)
+    MAX_MESSAGE_BYTES,
+    valid_backend,
+    validate_message,
+)
 from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 
@@ -46,8 +50,7 @@ def validate_provenance(provenance, request, response, role):
         str(UUID(provenance.service_id)) == provenance.service_id, "invalid agent service identity"
     )
     require(
-        provenance.backend in ("deterministic-v1", "replay-v1")
-        and 0 < len(provenance.release.encode()) <= 128,
+        valid_backend(provenance.backend) and 0 < len(provenance.release.encode()) <= 128,
         "invalid agent backend provenance",
     )
     require(

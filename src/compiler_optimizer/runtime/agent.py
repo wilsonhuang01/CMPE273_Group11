@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import grpc
 
+from compiler_optimizer.agents.model import ModelConfig
 from compiler_optimizer.agents.rpc_service import AgentService
 from compiler_optimizer.runtime.health import Readiness, health_server
 from compiler_optimizer.runtime.security import BearerAuth, validate_rpc_security
@@ -64,7 +65,12 @@ def run_agent(settings):
     validate_rpc_security(settings)
     development_tls(settings)
     role = next(role for role, spec in ROLES.items() if spec.name == settings.role)
-    service = AgentService(settings.state_directory, role, release=settings.agent_release)
+    service = AgentService(
+        settings.state_directory,
+        role,
+        release=settings.agent_release,
+        model=ModelConfig.from_env(os.environ),
+    )
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
@@ -89,9 +95,12 @@ def run_agent(settings):
         )
     else:
         server.add_insecure_port(address)
+    probes = {"agent_storage": service.store.check_health}
+    if service.model_check is not None:
+        probes["model_provider"] = service.model_check  # No credentials: report not ready.
     state = Readiness(
         settings.role,
-        {"agent_storage": service.store.check_health},
+        probes,
         interval=settings.probe_interval_seconds,
         capabilities=["agent_rpc_v1"],
     )

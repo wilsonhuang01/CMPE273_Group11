@@ -14,6 +14,7 @@ from compiler_optimizer.shared.agents_rpc import (
     MAX_AGENT_ARTIFACT_BYTES,
     parse_record,
     sha,
+    valid_backend,
     validate_provenance,
     wire,
 )
@@ -73,7 +74,8 @@ class AgentClient:
                 require(
                     identity.role == role
                     and identity.service_id
-                    and identity.backend == "deterministic-v1",
+                    and identity.backend != "replay-v1"
+                    and valid_backend(identity.backend),
                     "agent readiness identity mismatch",
                 )
 

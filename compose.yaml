@@ -52,6 +52,20 @@ x-agent-environment: &agent-environment
   AGENT_TLS_DIRECTORY: /var/lib/compiler-agent/tls
   AGENT_CA_DIRECTORY: /agent-ca
 
+# Model provider for generator/reviewer agents (action G). Defaults keep deterministic rules.
+# Credentials are passed through from the host shell only when set; nothing is stored here.
+x-model-environment: &model-environment
+  MODEL_PROVIDER: ${MODEL_PROVIDER:-none}
+  MODEL_ID: ${MODEL_ID:-}
+  MODEL_REGION: ${MODEL_REGION:-}
+  MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-60}
+  MODEL_MAX_CALLS_PER_TASK: ${MODEL_MAX_CALLS_PER_TASK:-12}
+  MODEL_MAX_TOKENS_PER_TASK: ${MODEL_MAX_TOKENS_PER_TASK:-200000}
+  AWS_REGION:
+  AWS_ACCESS_KEY_ID:
+  AWS_SECRET_ACCESS_KEY:
+  AWS_SESSION_TOKEN:
+
 services:
   compiler-arm:
     profiles: [native-arm]
@@ -153,7 +167,7 @@ services:
     <<: *agent
     command: [--role, performance]
     environment:
-      <<: *agent-environment
+      <<: [*agent-environment, *model-environment]
     cpus: 1.0
     mem_limit: 512m
     ports:
@@ -167,7 +181,7 @@ services:
     <<: *agent
     command: [--role, memory]
     environment:
-      <<: *agent-environment
+      <<: [*agent-environment, *model-environment]
     cpus: 1.0
     mem_limit: 512m
     ports:
@@ -181,7 +195,7 @@ services:
     <<: *agent
     command: [--role, correctness]
     environment:
-      <<: *agent-environment
+      <<: [*agent-environment, *model-environment]
     cpus: 1.0
     mem_limit: 512m
     ports:
@@ -195,7 +209,7 @@ services:
     <<: *agent
     command: [--role, architecture]
     environment:
-      <<: *agent-environment
+      <<: [*agent-environment, *model-environment]
     cpus: 1.0
     mem_limit: 512m
     ports:
@@ -209,7 +223,7 @@ services:
     <<: *agent
     command: [--role, critic]
     environment:
-      <<: *agent-environment
+      <<: [*agent-environment, *model-environment]
     cpus: 1.0
     mem_limit: 512m
     ports:
@@ -243,6 +257,7 @@ services:
       FLEET_ENABLED: "false"
       GRPC_HOST: "0.0.0.0"
       AGENT_BACKEND: rpc
+      AGENT_TIMEOUT_SECONDS: ${AGENT_TIMEOUT_SECONDS:-15}
       AGENT_TLS: "true"
       AGENT_API_TOKEN: ${AGENT_API_TOKEN:-optimizer-agent-dev-token-change-me-0001}
       AGENT_CA_DIRECTORY: /agent-ca

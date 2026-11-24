@@ -1,8 +1,10 @@
 FROM python:3.11-slim-bookworm AS builder
+# Optional extras baked into the image; "bedrock" lets agent services call Amazon Bedrock.
+ARG PACKAGE_EXTRAS=bedrock
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY src/ src/
-RUN python -m pip wheel --no-cache-dir --wheel-dir /wheels .
+RUN python -m pip wheel --no-cache-dir --wheel-dir /wheels ".[${PACKAGE_EXTRAS}]"
 
 FROM python:3.11-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
