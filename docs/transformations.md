@@ -71,6 +71,12 @@ to use invalid pointers, out-of-bounds buffers or inputs outside explicit checks
 The normal compiler, fixed/generated tests, sanitizer checks, Critic review and
 benchmark qualification remain mandatory.
 
+Portable Performance and Memory rules also admit the controlled RV64GC/LP64D
+profile for correctness validation under QEMU. Its scalar ABI satisfies the same
+rule preconditions. Architecture rules remain native ARM64/x86-64 only. RISC-V
+candidates still pass verification and reviews, but cannot qualify benchmarks or
+displace the baseline through performance selection.
+
 ## Versioned source contracts
 
 Rules emit structured patch schema v2: the v1 fields plus a required `contract`.

@@ -250,6 +250,35 @@ def test_unsupported_target_or_changed_flags_abstain():
         ArchitectureRuleBackend().generate(request, package.sources)
 
 
+@pytest.mark.parametrize(
+    "name,backend_type",
+    [
+        ("bounded-echo", PerformanceRuleBackend),
+        ("buffered-total", MemoryRuleBackend),
+    ],
+)
+def test_portable_riscv_candidates_remain_available_for_correctness_only(name, backend_type):
+    from compiler_optimizer.workers.targets import target_profile
+
+    package = read_package(FIXTURES / name)
+    backend = backend_type()
+    request = assignment(package, backend.role, "linux-riscv64")
+    before = request.compiler.SerializeToString()
+    data = backend.generate(request, package.sources)
+    patch, changed = apply_patch(
+        data, package.sources, request.source.bundle.sha256, compiler=request.compiler
+    )
+    assert patch["contract"] == {
+        "schema_version": 1,
+        "mode": "portable",
+        "target": "linux-riscv64",
+        "language": "c17",
+        "required_features": [],
+    }
+    assert changed != package.sources and request.compiler.SerializeToString() == before
+    assert not target_profile(request.compiler.target).performance_qualification
+
+
 def test_model_contract_survives_generation_and_is_bound_to_the_assigned_profile():
     from test_model_adapter import Scripted, client
 

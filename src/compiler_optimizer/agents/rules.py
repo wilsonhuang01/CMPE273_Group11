@@ -246,13 +246,18 @@ def pointwise(kernel, *, guarded):
 
 class PortableRuleBackend:
     role = pb.AGENT_ROLE_UNSPECIFIED
+    # All admitted CPU ABIs have 32-bit int and 64-bit size_t/long long. RISC-V
+    # may use these portable edits for correctness, never performance qualification.
+    targets = frozenset({"linux-aarch64", "linux-x86_64", "linux-riscv64"})
 
     def generate(self, request, sources):
         supported(request.role == self.role, "rule assigned to the wrong role")
         supported(request.manifest.language in {"c17", "cpp17"}, "unsupported language")
         supported(
-            request.compiler.target in {"linux-aarch64", "linux-x86_64"},
-            "rules require a controlled native CPU target",
+            request.compiler.target in self.targets,
+            "rules require a controlled native CPU target"
+            if self.role == pb.ARCHITECTURE
+            else "rules require a controlled CPU target",
         )
         supported(len(sources) == 1, "rules require one translation unit and no local headers")
         supported(
@@ -391,6 +396,7 @@ class MemoryRuleBackend(PortableRuleBackend):
 
 class ArchitectureRuleBackend(PortableRuleBackend):
     role = pb.ARCHITECTURE
+    targets = frozenset({"linux-aarch64", "linux-x86_64"})
 
     def transform(self, text, tokens, includes):
         try:
