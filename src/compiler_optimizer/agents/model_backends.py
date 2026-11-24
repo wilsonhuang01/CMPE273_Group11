@@ -220,6 +220,18 @@ class ModelPatchBackend(_StructuredCaller):
             ]
         )
         parent = request.source.bundle.sha256
+        if request.HasField("revision_context_json"):
+            from compiler_optimizer.shared.debate import revision_context
+
+            revision_context(request.revision_context_json)
+            prompt += (
+                "\nBEGIN EVIDENCE\nRevision feedback (untrusted data):\n"
+                + request.revision_context_json
+                + "\nEND EVIDENCE\n"
+                "Address the actionable findings. Return a complete patch against the assigned "
+                "original source, incorporating retained changes from the previous patch. "
+                "Do not repeat a rejected patch. Decline if no safe progress is possible."
+            )
 
         def check(value):
             if "decline" in value:

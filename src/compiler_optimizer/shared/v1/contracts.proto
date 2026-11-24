@@ -83,6 +83,8 @@ message OptimizationRequest {
   SourceVersion source = 5;
   CompilerSettings compiler = 6;
   optional ArtifactRef replay_patch = 7;
+  // Coordinator-bound criticism for a baseline-rebased revision; untrusted data only.
+  optional string revision_context_json = 8;
 }
 
 message AgentProvenance {

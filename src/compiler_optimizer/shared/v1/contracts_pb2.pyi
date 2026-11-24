@@ -180,7 +180,7 @@ class Submission(_message.Message):
     def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., package: _Optional[_Union[ArtifactRef, _Mapping]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ...) -> None: ...
 
 class OptimizationRequest(_message.Message):
-    __slots__ = ("meta", "proposal_id", "role", "manifest", "source", "compiler", "replay_patch")
+    __slots__ = ("meta", "proposal_id", "role", "manifest", "source", "compiler", "replay_patch", "revision_context_json")
     META_FIELD_NUMBER: _ClassVar[int]
     PROPOSAL_ID_FIELD_NUMBER: _ClassVar[int]
     ROLE_FIELD_NUMBER: _ClassVar[int]
@@ -188,6 +188,7 @@ class OptimizationRequest(_message.Message):
     SOURCE_FIELD_NUMBER: _ClassVar[int]
     COMPILER_FIELD_NUMBER: _ClassVar[int]
     REPLAY_PATCH_FIELD_NUMBER: _ClassVar[int]
+    REVISION_CONTEXT_JSON_FIELD_NUMBER: _ClassVar[int]
     meta: Metadata
     proposal_id: str
     role: AgentRole
@@ -195,7 +196,8 @@ class OptimizationRequest(_message.Message):
     source: SourceVersion
     compiler: CompilerSettings
     replay_patch: ArtifactRef
-    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., replay_patch: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+    revision_context_json: str
+    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., replay_patch: _Optional[_Union[ArtifactRef, _Mapping]] = ..., revision_context_json: _Optional[str] = ...) -> None: ...
 
 class AgentProvenance(_message.Message):
     __slots__ = ("schema_version", "role", "service_id", "backend", "request_sha256", "response_sha256", "release")

@@ -145,6 +145,7 @@ class CohortCoordinator:
             1 <= len(names) <= policy.maximum_candidates and len(names) == len(set(names)),
             "cohort needs distinct generating roles within its candidate limit",
         )
+        names = self._candidate_names(names, policy)
         task, original, _ = _snapshot(repository, task_id)
         require(
             self.runner.compiler(original.manifest.language) == task["submission"].compiler,
@@ -187,10 +188,32 @@ class CohortCoordinator:
                     "backend_patch": None if patch_ref is None else reference(patch_ref),
                 }
             )
-        repository.begin_selection(task_id, policy_ref, members)
+        debate_ref = getattr(self, "_debate_policy_ref", None)
+        if debate_ref is None:
+            repository.begin_selection(task_id, policy_ref, members)
+        else:
+            repository.begin_selection(task_id, policy_ref, members, debate_policy_ref=debate_ref)
+
+    def _candidate_names(self, names, policy):
+        return names
+
+    def _generation_request(self, task_id, member, request):
+        return request
 
     def _run(self, task_id):
         repository = self.repository
+        if repository.debate_run(task_id) is not None:
+            from compiler_optimizer.coordinator.debate import DebateCoordinator
+
+            return DebateCoordinator(
+                repository,
+                self.runner,
+                self.broker,
+                backends=self.backends,
+                review_backends=None if self.agent_client else self.review_backends,
+                recovery=self.recovery,
+                agent_client=self.agent_client,
+            )._run(task_id)
         if self.recovery is not None:
             self.recovery.flush_outbox(task_id, self.broker)
         else:
@@ -277,6 +300,7 @@ class CohortCoordinator:
         request = next(
             r for r in repository.list_requests(task_id) if r.proposal_id == member["proposal_id"]
         )
+        request = self._generation_request(task_id, member, request)
         agent_type, starter = GENERATORS[request.role]
         name = role_spec(request.role).name
         backend = self.backends.get(name)
@@ -502,6 +526,7 @@ def main():
     parser.add_argument("--policy")
     parser.add_argument("--verification-plan")
     parser.add_argument("--benchmark-plan")
+    parser.add_argument("--debate-policy", help="Operator revision limits and held-out cases JSON")
     parser.add_argument("--patch", action="append", default=[], help="ROLE=structured-patch.json")
     parser.add_argument("--image")
     parser.add_argument("--target", choices=tuple(DEFAULT_IMAGES), default="linux-x86_64")
@@ -528,7 +553,16 @@ def main():
             return 0
         from compiler_optimizer.agents.rpc_client import configured_client
 
-        coordinator = CohortCoordinator(
+        coordinator_type, debate_options = CohortCoordinator, {}
+        if args.debate_policy:
+            from compiler_optimizer.coordinator.debate import DebateCoordinator
+            from compiler_optimizer.shared.debate import DebatePolicy
+
+            coordinator_type = DebateCoordinator
+            debate_options["debate_policy"] = DebatePolicy.parse(
+                Path(args.debate_policy).read_bytes()
+            )
+        coordinator = coordinator_type(
             repository,
             DockerRunner(
                 args.image or DEFAULT_IMAGES[args.target],
@@ -538,6 +572,7 @@ def main():
             RabbitProposalQueue(Settings.from_env("coordinator")),
             backends=backends,
             agent_client=configured_client(repository),
+            **debate_options,
         )
         require(1 <= args.workers <= 8, "worker pool size must be 1–8")
         coordinator.recovery = RecoveryController.local(

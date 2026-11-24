@@ -56,7 +56,7 @@ class SelectionStorage:
                 "outcome_key": row["outcome_key"],
             }
 
-    def begin_selection(self, task_id, policy_ref, members):
+    def begin_selection(self, task_id, policy_ref, members, *, debate_policy_ref=None):
         policy = SelectionPolicy.parse(self.artifacts.get(policy_ref))
         require(
             isinstance(members, list) and 1 <= len(members) <= policy.maximum_candidates,
@@ -89,6 +89,14 @@ class SelectionStorage:
             if previous is not None:
                 if (previous["policy_key"], previous["cohort_json"]) != (policy_ref.key, cohort):
                     raise ConflictError("selection policy/cohort is already frozen")
+                if debate_policy_ref is not None:
+                    debate = db.execute(
+                        "SELECT policy_key FROM debate_runs WHERE task_id=?", (task_id,)
+                    ).fetchone()
+                    require(
+                        debate is not None and debate[0] == debate_policy_ref.key,
+                        "debate policy is frozen",
+                    )
                 return False
             require(task["status"] == "running", "selection needs a running task")
             self._selection_baseline(db, task_id)
@@ -160,6 +168,8 @@ class SelectionStorage:
                 "INSERT INTO selection_sessions VALUES (?, ?, ?, NULL)",
                 (task_id, policy_ref.key, cohort),
             )
+            if debate_policy_ref is not None:
+                self._begin_debate(db, task_id, debate_policy_ref, members)
         return True
 
     def register_selection_patch(self, task_id, proposal_id, patch_ref):
@@ -464,7 +474,7 @@ class SelectionStorage:
             )
         return candidate, identity
 
-    def _selection_audit(self, db, task_id):
+    def _selection_audit(self, db, task_id, *, provisional=False):
         task = self._task(db, task_id)
         session = db.execute(
             "SELECT * FROM selection_sessions WHERE task_id=?", (task_id,)
@@ -522,8 +532,22 @@ class SelectionStorage:
                 seen.add(candidate["source_sha256"])
                 unique.append(candidate)
         pending = any(c["state"] == "pending" for c in candidates)
+        debate = db.execute("SELECT * FROM debate_runs WHERE task_id=?", (task_id,)).fetchone()
+        heldout_failed = False
+        if debate is not None and not provisional:
+            pending = pending or debate["final_state"] != "completed"
+            if debate["final_report_key"] is not None:
+                final = json.loads(self.artifacts.get(self._ref(db, debate["final_report_key"])))
+                heldout_failed = not final["passed"]
+                if heldout_failed:
+                    unique = []  # One final candidate, never adaptive retries on the held-out set.
         blocked = task["status"] == "failed"
         selected = unique[0] if unique and not pending and not blocked else None
+        if debate is not None and not provisional and selected is not None:
+            require(
+                debate["final_proposal_id"] == selected["proposal_id"],
+                "held-out evaluation belongs to a different candidate",
+            )
         selected_source = None
         if not blocked and not pending:
             selected_source = reference(self._submission(task).source.bundle)
@@ -532,7 +556,7 @@ class SelectionStorage:
                     db, "proposals", pb.Proposal, "proposal_id", selected["proposal_id"]
                 )
                 selected_source = reference(proposal.source.bundle)
-        return {
+        audit = {
             "schema_version": 1,
             "task_id": task_id,
             "policy": reference(policy_ref),
@@ -569,6 +593,26 @@ class SelectionStorage:
             "ranking": [c["proposal_id"] for c in unique],
             "candidates": candidates,
         }
+        if debate is not None:
+            audit["debate"] = {
+                "policy": reference(self._ref(db, debate["policy_key"])),
+                "agent_calls": debate["calls"],
+                "heldout": None
+                if debate["final_report_key"] is None
+                else reference(self._ref(db, debate["final_report_key"])),
+            }
+            if heldout_failed and not blocked and not pending:
+                audit["reason"] = "heldout_evaluation_failed"
+        return audit
+
+    def preview_debate_selection(self, task_id):
+        with self._transaction(write=False) as db:
+            require(
+                db.execute("SELECT 1 FROM debate_runs WHERE task_id=?", (task_id,)).fetchone()
+                is not None,
+                "unknown debate",
+            )
+            return self._selection_audit(db, task_id, provisional=True)
 
     def preview_selection(self, task_id):
         with self._transaction(write=False) as db:

@@ -9,6 +9,7 @@ from compiler_optimizer.agents.critic import CriticAgent
 from compiler_optimizer.shared.benchmarking import BenchmarkPlan
 from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
+from compiler_optimizer.storage.errors import StateError
 from compiler_optimizer.workers.benchmark import run_benchmark
 from compiler_optimizer.workers.verification_plan import VerificationPlan
 from compiler_optimizer.workers.verify import run_verification
@@ -160,6 +161,8 @@ def _evaluate_stages(
     if verified.WhichOneof("outcome") == "success" and all(
         review["verdict"] == "approve" for review in reviews.values()
     ):
+        if repository.debate_limit(task_id):
+            raise StateError("debate call/time budget exhausted before measurement")
         if proposal.compiler.target == "linux-riscv64":
             return verified, None, reviews, None
         if config["schema_version"] >= 2:

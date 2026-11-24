@@ -232,6 +232,12 @@ def validate_message(message: Message) -> None:
     elif isinstance(message, (pb.Proposal, pb.OptimizationRequest)):
         _uuid(message.proposal_id, "proposal_id")
         _role(message.role)
+        if isinstance(message, pb.OptimizationRequest) and message.HasField(
+            "revision_context_json"
+        ):
+            from compiler_optimizer.shared.debate import revision_context
+
+            revision_context(message.revision_context_json)
         if isinstance(message, pb.Proposal):
             require(message.source.version > 1, "proposal must derive from a parent source")
             require(0 < len(message.rationale.encode()) <= 16384, "rationale must be 1–16384 bytes")

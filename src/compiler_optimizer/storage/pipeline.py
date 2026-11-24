@@ -67,7 +67,14 @@ class PipelineStorage:
                 "SELECT COUNT(*) FROM agent_iterations WHERE task_id=? AND role=?", (task_id, role)
             ).fetchone()[0]
             scoped_count = count
-            if role in (pb.CORRECTNESS, pb.CRITIC, pb.BENCHMARK):
+            debate = db.execute("SELECT 1 FROM debate_runs WHERE task_id=?", (task_id,)).fetchone()
+            if debate is not None:
+                scoped_count = db.execute(
+                    "SELECT COUNT(*) FROM agent_iterations "
+                    "WHERE task_id=? AND role=? AND operation_id=?",
+                    (task_id, role, operation),
+                ).fetchone()[0]
+            elif role in (pb.CORRECTNESS, pb.CRITIC, pb.BENCHMARK):
                 subject = operation.split(":", 1)[0]
                 require(
                     str(UUID(subject)) == subject,
@@ -80,6 +87,7 @@ class PipelineStorage:
                 ).fetchone()[0]
             if scoped_count >= spec.max_iterations:
                 raise StateError(f"{spec.name} agent iteration limit reached")
+            self._debate_call(db, task_id)
             self._artifact(db, task_id, input_ref, "agent-input", owner=f"{spec.name}/{count + 1}")
             db.execute(
                 "INSERT INTO agent_iterations VALUES (?, ?, ?, ?, ?, NULL, 'started')",

@@ -28,6 +28,9 @@ or multi-agent superiority.
 
 ## Implemented capabilities
 
+- **Bounded debate and revisions:** optional criticism-driven revision rounds,
+  durable lineage/budgets and a one-shot held-out final gate. See [debate setup](debate.md).
+
 - **CPU execution and verification:** controlled C17/C++17 builds, isolated Docker
   execution, independent watchdogs, fixed/generated differential tests and UBSan.
   AddressSanitizer is restricted to native amd64 workers.

@@ -195,6 +195,9 @@ def test_populated_schema_eight_upgrade_preserves_frozen_recovery(tmp_path):
             db.execute(f"INSERT INTO {table} SELECT {columns} FROM backup_{table}")
         for table in (
             "agent_rpc_calls",
+            "debate_events",
+            "debate_slots",
+            "debate_runs",
             "cohort_work",
             "cohort_runs",
             "measurement_windows",

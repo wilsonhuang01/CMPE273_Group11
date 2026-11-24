@@ -28,7 +28,9 @@ def validate_workflow(value):
     expected = set(default_workflow())
     require(
         isinstance(value, dict)
-        and expected - {"execution_backend", "agent_backend"} <= set(value) <= expected,
+        and expected - {"execution_backend", "agent_backend"}
+        <= set(value)
+        <= expected | {"debate_policy"},
         "invalid workflow",
     )
     require(
@@ -53,5 +55,13 @@ def validate_workflow(value):
     BenchmarkPlan.parse(value["benchmark_plan"])
     policy = SelectionPolicy.parse(value["selection_policy"])
     require(len(names) <= policy.maximum_candidates, "workflow exceeds cohort size")
+    if "debate_policy" in value:
+        from compiler_optimizer.shared.debate import DebatePolicy
+
+        debate = DebatePolicy.parse(value["debate_policy"])
+        require(
+            len(names) * debate.max_rounds <= policy.maximum_candidates,
+            "all debate rounds must fit the cohort candidate budget",
+        )
     RecoveryPolicy.parse(value["recovery_policy"])
     return json.dumps(value, sort_keys=True, allow_nan=False)

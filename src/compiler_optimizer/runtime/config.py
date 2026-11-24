@@ -52,10 +52,16 @@ class Settings:
     agent_dev_tls: bool = False
     agent_tls_directory: Path | None = None
     agent_release: str = "0.1.0"
+    debate_policy_json: str = field(default="", repr=False)
 
     @classmethod
     def from_env(cls, role: str, environ=None):
         env = os.environ if environ is None else environ
+        debate_policy_json = env.get("DEBATE_POLICY_JSON", "")
+        if debate_policy_json:
+            from compiler_optimizer.shared.debate import DebatePolicy
+
+            DebatePolicy.parse(debate_policy_json)
         if role not in ("coordinator", "scheduler", "worker", *AGENT_NAMES):
             raise ValueError("unknown service role")
 
@@ -180,6 +186,7 @@ class Settings:
             agent_dev_tls=dev_tls,
             agent_tls_directory=tls_directory,
             agent_release=env.get("AGENT_RELEASE", "0.1.0"),
+            debate_policy_json=debate_policy_json,
         )
         validate_rpc_security(settings)
         return settings

@@ -166,7 +166,14 @@ class SubmissionDispatcher:
         repo.checkpoint_execution(task_id, "optimizing")
         if stop is not None and stop.is_set():
             return
-        coordinator = CohortCoordinator(
+        coordinator_type, debate_options = CohortCoordinator, {}
+        if "debate_policy" in config:
+            from compiler_optimizer.coordinator.debate import DebateCoordinator
+            from compiler_optimizer.shared.debate import DebatePolicy
+
+            coordinator_type = DebateCoordinator
+            debate_options["debate_policy"] = DebatePolicy.parse(config["debate_policy"])
+        coordinator = coordinator_type(
             repo,
             runner,
             self.broker_factory(),
@@ -174,6 +181,7 @@ class SubmissionDispatcher:
             agent_client=configured_client(
                 repo, replace(self.settings, agent_backend=config.get("agent_backend", "local"))
             ),
+            **debate_options,
         )
         options = {}
         if repo.get_selection_session(task_id) is None:

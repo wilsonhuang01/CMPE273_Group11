@@ -89,6 +89,9 @@ class AgentClient:
         )
         digest = sha(wire(request))
         end = time.monotonic() + settings.agent_timeout_seconds
+        debate = repository.debate_run(request.meta.task_id)
+        if debate is not None:
+            end = min(end, time.monotonic() + max(0, debate["deadline_ms"] / 1000 - time.time()))
 
         def remaining():
             seconds = end - time.monotonic()

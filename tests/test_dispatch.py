@@ -88,6 +88,29 @@ def test_invalid_package_cannot_leave_task_or_queue_entry(submitted):
     assert repo.list_tasks() == [] and repo.pending_executions() == []
 
 
+def test_automatic_submission_runs_its_frozen_debate_policy(submitted):
+    from compiler_optimizer.shared.debate import DebatePolicy
+
+    repo, runner, request = submitted
+    config = {
+        **default_workflow(),
+        "agents": ["performance"],
+        "debate_policy": json.loads(
+            DebatePolicy(heldout_cases=({"stdin": "7\n1 2 3 4 5 6 7\n", "args": []},)).encode()
+        ),
+    }
+    repo.save_submission(request, execution=config)
+    worker = dispatcher(repo, runner)
+    assert worker.run_once()
+    task = request.meta.task_id
+    execution = repo.get_execution(task)
+    assert execution["finished"] and execution["error_code"] is None
+    assert repo.get_task(task)["status"] == "completed"
+    run = repo.debate_run(task)
+    assert len(run["slots"]) == 2 and run["final_state"] == "completed"
+    assert execution["configuration"]["debate_policy"] == config["debate_policy"]
+
+
 def test_queue_insert_failure_rolls_back_submission(submitted):
     repo, _, request = submitted
     with repo._transaction() as db:

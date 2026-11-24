@@ -257,6 +257,7 @@ services:
       FLEET_ENABLED: "false"
       GRPC_HOST: "0.0.0.0"
       AGENT_BACKEND: rpc
+      DEBATE_POLICY_JSON: ${DEBATE_POLICY_JSON:-}
       AGENT_TIMEOUT_SECONDS: ${AGENT_TIMEOUT_SECONDS:-15}
       AGENT_TLS: "true"
       AGENT_API_TOKEN: ${AGENT_API_TOKEN:-optimizer-agent-dev-token-change-me-0001}

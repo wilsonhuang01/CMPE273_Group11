@@ -72,6 +72,11 @@ def run(settings):
                 **default_workflow(),
                 "execution_backend": settings.execution_backend,
                 "agent_backend": settings.agent_backend,
+                **(
+                    {"debate_policy": json.loads(settings.debate_policy_json)}
+                    if settings.debate_policy_json
+                    else {}
+                ),
             },
         )
         rpc.add_CoordinatorServiceServicer_to_server(coordinator, grpc_server)

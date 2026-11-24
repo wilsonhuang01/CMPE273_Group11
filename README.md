@@ -2,6 +2,10 @@
 
 **Fault-Tolerant Distributed Compiler Optimizer Using Specialized AI Agents**
 
+Optional [bounded debate and revision rounds](docs/debate.md) feed review findings
+back to generators while preserving frozen tests, measurement budgets and a
+held-out final evaluation gate.
+
 ## One-command startup and demonstration
 
 All commands and relative paths assume the project root.

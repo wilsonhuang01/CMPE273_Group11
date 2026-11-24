@@ -22,6 +22,7 @@ from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.shared.workflow import validate_workflow
 from compiler_optimizer.storage.artifacts import ArtifactStore
 from compiler_optimizer.storage.concurrency import ConcurrencyStorage
+from compiler_optimizer.storage.debate import DebateStorage
 from compiler_optimizer.storage.errors import ConflictError, NotFoundError, StateError
 from compiler_optimizer.storage.execution import ExecutionStorage
 from compiler_optimizer.storage.fleet import FleetStorage
@@ -41,6 +42,7 @@ class Repository(
     ExecutionStorage,
     FleetStorage,
     ConcurrencyStorage,
+    DebateStorage,
 ):
     """Use one instance per service; operations open their own SQLite connection.
 
@@ -73,6 +75,7 @@ class Repository(
                 (9, "recovery_scopes.sql"),
                 (10, "concurrency.sql"),
                 (11, "agent_rpc.sql"),
+                (12, "debate.sql"),
             ):
                 if version == target - 1:
                     schema = files("compiler_optimizer.storage").joinpath(name).read_text()
@@ -81,7 +84,7 @@ class Repository(
                             db.execute(statement)
                     db.execute(f"PRAGMA user_version = {target}")
                     version = target
-            if version != 11:
+            if version != 12:
                 raise StateError(f"unsupported database schema version: {version}")
 
     @contextmanager
