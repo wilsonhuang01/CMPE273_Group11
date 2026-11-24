@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "name": "bounded-echo",
+  "language": "c17",
+  "sources": [
+    "main.c"
+  ],
+  "tests": [
+    {
+      "id": "zero",
+      "stdin": "tests/zero.in",
+      "expected_stdout": "tests/zero.out",
+      "args": []
+    },
+    {
+      "id": "negative",
+      "stdin": "tests/negative.in",
+      "expected_stdout": "tests/negative.out",
+      "args": []
+    },
+    {
+      "id": "upper",
+      "stdin": "tests/upper.in",
+      "expected_stdout": "tests/upper.out",
+      "args": []
+    }
+  ],
+  "benchmark_test_ids": [
+    "upper"
+  ],
+  "limits": {
+    "compile_wall_seconds": 30,
+    "compile_memory_mib": 1024,
+    "run_wall_seconds": 2,
+    "run_memory_mib": 256,
+    "output_kib": 64
+  }
+}

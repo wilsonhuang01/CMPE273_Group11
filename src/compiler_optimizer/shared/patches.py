@@ -25,13 +25,18 @@ def parse_patch(data):
     require(
         isinstance(value, dict)
         and set(value)
-        == {"schema_version", "parent_source_sha256", "rationale", "transformation", "edits"},
+        == {"schema_version", "parent_source_sha256", "rationale", "transformation", "edits"}
+        | ({"contract"} if value.get("schema_version") == 2 else set()),
         "patch has missing/unknown fields",
     )
     require(
-        type(value["schema_version"]) is int and value["schema_version"] == 1,
+        type(value["schema_version"]) is int and value["schema_version"] in (1, 2),
         "unsupported patch schema",
     )
+    if value["schema_version"] == 2:
+        from compiler_optimizer.shared.transformations import parse_contract
+
+        parse_contract(value["contract"])
     require(
         isinstance(value["parent_source_sha256"], str)
         and SHA256.fullmatch(value["parent_source_sha256"]),
@@ -62,7 +67,7 @@ def parse_patch(data):
     return value
 
 
-def apply_patch(data, sources, parent_sha256):
+def apply_patch(data, sources, parent_sha256, *, compiler=None):
     patch = parse_patch(data)
     require(patch["parent_source_sha256"] == parent_sha256, "patch parent hash mismatch")
     result = dict(sources)
@@ -74,4 +79,7 @@ def apply_patch(data, sources, parent_sha256):
         result[edit["path"]] = contents.replace(old, new, 1)
     require(sum(map(len, result.values())) <= 10 * 1024**2, "patched sources exceed 10 MiB")
     require(result != sources, "patch does not change the source")
+    from compiler_optimizer.shared.transformations import validate_change
+
+    validate_change(patch, sources, result, compiler)
     return patch, result

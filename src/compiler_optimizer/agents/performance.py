@@ -72,7 +72,9 @@ class PerformanceAgent:
         require(request.role == pb.PERFORMANCE, "Performance Agent requires PERFORMANCE assignment")
         sources = unbundle(self.artifacts.get(request.source.bundle))
         data = self.backend.generate(request, dict(sources))
-        patch, changed = apply_patch(data, sources, request.source.bundle.sha256)
+        patch, changed = apply_patch(
+            data, sources, request.source.bundle.sha256, compiler=request.compiler
+        )
         canonical = json.dumps(patch, sort_keys=True, allow_nan=False).encode()
         proposal = pb.Proposal(
             meta=metadata(request.meta.task_id),

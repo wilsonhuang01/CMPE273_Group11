@@ -9,9 +9,14 @@ class TargetProfile:
     flags: tuple[str, ...]
     emulator: tuple[str, ...] = ()
     performance_qualification: bool = True
+    source_features: tuple[str, ...] = ()
 
 
-X86 = TargetProfile("linux-x86_64", ("-O2", "-march=x86-64", "-mtune=generic", "-Wall", "-Wextra"))
+X86 = TargetProfile(
+    "linux-x86_64",
+    ("-O2", "-march=x86-64", "-mtune=generic", "-Wall", "-Wextra"),
+    source_features=("sse2",),
+)
 RISCV = TargetProfile(
     "linux-riscv64",
     (
@@ -27,7 +32,9 @@ RISCV = TargetProfile(
     False,
 )
 ARM = TargetProfile(
-    "linux-aarch64", ("-O2", "-march=armv8-a", "-mtune=generic", "-Wall", "-Wextra")
+    "linux-aarch64",
+    ("-O2", "-march=armv8-a", "-mtune=generic", "-Wall", "-Wextra"),
+    source_features=("neon",),
 )
 TARGETS = {p.name: p for p in (X86, ARM, RISCV)}
 DEFAULT_IMAGES = {

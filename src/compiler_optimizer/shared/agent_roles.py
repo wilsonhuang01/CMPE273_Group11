@@ -35,7 +35,7 @@ ROLES = {
     ),
     pb.ARCHITECTURE: RoleSpec(
         "architecture",
-        "Improve portable x86-64 execution",
+        "Improve execution for the assigned native CPU target",
         ("assignment", "source", "fixed target/compiler"),
         "structured source patch and rationale",
         2,

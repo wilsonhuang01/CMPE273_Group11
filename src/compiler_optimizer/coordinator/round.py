@@ -9,14 +9,18 @@ from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
-from compiler_optimizer.agents.architecture import ArchitectureAgent, ExampleArchitectureBackend
+from compiler_optimizer.agents.architecture import ArchitectureAgent
 from compiler_optimizer.agents.generation import generate_record, unpack_generation
 from compiler_optimizer.agents.journal import AgentJournal
-from compiler_optimizer.agents.memory import ExampleMemoryBackend, MemoryAgent
+from compiler_optimizer.agents.memory import MemoryAgent
 from compiler_optimizer.agents.performance import (
-    ExamplePerformanceBackend,
     FilePatchBackend,
     PerformanceAgent,
+)
+from compiler_optimizer.agents.rules import (
+    ArchitectureRuleBackend,
+    MemoryRuleBackend,
+    PerformanceRuleBackend,
 )
 from compiler_optimizer.coordinator.selection import SelectionCoordinator
 from compiler_optimizer.runtime.config import Settings
@@ -25,6 +29,7 @@ from compiler_optimizer.scheduler.recovery import RecoveryController
 from compiler_optimizer.scheduler.resources import reservation_mib, runner_capacity
 from compiler_optimizer.shared.agent_roles import generation_role, role_spec
 from compiler_optimizer.shared.benchmarking import BenchmarkPlan
+from compiler_optimizer.shared.c_syntax import TransformationAbstained
 from compiler_optimizer.shared.manifest import ContractError, require
 from compiler_optimizer.shared.messaging import encode_message
 from compiler_optimizer.shared.recovery import RecoveryPolicy, RecoveryTerminal
@@ -42,9 +47,9 @@ from compiler_optimizer.workers.verification_plan import VerificationPlan
 from compiler_optimizer.workers.verify import _snapshot
 
 GENERATORS = {
-    pb.PERFORMANCE: (PerformanceAgent, ExamplePerformanceBackend),
-    pb.MEMORY: (MemoryAgent, ExampleMemoryBackend),
-    pb.ARCHITECTURE: (ArchitectureAgent, ExampleArchitectureBackend),
+    pb.PERFORMANCE: (PerformanceAgent, PerformanceRuleBackend),
+    pb.MEMORY: (MemoryAgent, MemoryRuleBackend),
+    pb.ARCHITECTURE: (ArchitectureAgent, ArchitectureRuleBackend),
 }
 
 
@@ -340,7 +345,9 @@ class CohortCoordinator:
             evidence = {
                 "task_id": task_id,
                 "proposal_id": request.proposal_id,
-                "reason": "generation_failed",
+                "reason": "generation_abstained"
+                if isinstance(error, TransformationAbstained)
+                else "generation_failed",
                 "message": str(error)[:4096],
             }
             ref = repository.artifacts.put(json.dumps(evidence, sort_keys=True).encode())
@@ -529,7 +536,9 @@ def main():
     parser.add_argument("--debate-policy", help="Operator revision limits and held-out cases JSON")
     parser.add_argument("--patch", action="append", default=[], help="ROLE=structured-patch.json")
     parser.add_argument("--image")
-    parser.add_argument("--target", choices=tuple(DEFAULT_IMAGES), default="linux-x86_64")
+    parser.add_argument(
+        "--target", choices=tuple(DEFAULT_IMAGES), help="Defaults to the Docker engine's native CPU"
+    )
     parser.add_argument("--recovery-policy")
     parser.add_argument(
         "--workers", type=int, default=8, help="Upper bound; capacity preserves headroom"
@@ -551,6 +560,10 @@ def main():
             repository.cancel_cohort(args.task_id)
             print(json.dumps({"task_id": args.task_id, "status": "cancellation_requested"}))
             return 0
+        if args.target is None:
+            from compiler_optimizer.evaluation.__main__ import native_target
+
+            args.target = native_target()
         from compiler_optimizer.agents.rpc_client import configured_client
 
         coordinator_type, debate_options = CohortCoordinator, {}

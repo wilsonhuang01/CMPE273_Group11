@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "name": "buffered-total",
+  "language": "c17",
+  "sources": [
+    "main.c"
+  ],
+  "tests": [
+    {
+      "id": "empty",
+      "stdin": "tests/empty.in",
+      "expected_stdout": "tests/empty.out",
+      "args": []
+    },
+    {
+      "id": "mixed",
+      "stdin": "tests/mixed.in",
+      "expected_stdout": "tests/mixed.out",
+      "args": []
+    },
+    {
+      "id": "bounds",
+      "stdin": "tests/bounds.in",
+      "expected_stdout": "tests/bounds.out",
+      "args": []
+    }
+  ],
+  "benchmark_test_ids": [
+    "bounds"
+  ],
+  "limits": {
+    "compile_wall_seconds": 30,
+    "compile_memory_mib": 1024,
+    "run_wall_seconds": 2,
+    "run_memory_mib": 256,
+    "output_kib": 64
+  }
+}

@@ -18,6 +18,7 @@ from compiler_optimizer.shared.agents_rpc import (
     validate_provenance,
     wire,
 )
+from compiler_optimizer.shared.c_syntax import TransformationAbstained
 from compiler_optimizer.shared.contracts import validate_message, validate_proposal_for_request
 from compiler_optimizer.shared.manifest import ContractError, require
 from compiler_optimizer.shared.patches import apply_patch
@@ -179,6 +180,10 @@ class AgentClient:
                 return response
         except grpc.RpcError as error:
             receipt["error"] = error.code().name
+            if error.code() == grpc.StatusCode.FAILED_PRECONDITION and (
+                error.details() or ""
+            ).startswith("rule backend abstained:"):
+                raise TransformationAbstained(error.details()[:300]) from None
             raise AgentUnavailable("agent RPC failed: " + error.code().name) from None
         except (ValueError, OSError) as error:
             receipt["error"] = type(error).__name__
@@ -210,6 +215,7 @@ class AgentClient:
                         client.repository.artifacts.get(proposal.structured_patch),
                         before,
                         request.source.bundle.sha256,
+                        compiler=request.compiler,
                     )
                     require(
                         client.repository.artifacts.put(bundle(after)) == proposal.source.bundle

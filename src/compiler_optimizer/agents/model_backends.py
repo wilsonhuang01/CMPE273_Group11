@@ -44,6 +44,14 @@ Rules:
   accepts, and keep all existing input validation and bounds checks.
 - No undefined behavior, no new files, no file/network/process/thread/time/randomness use,
   no compiler-specific pragmas or attributes, no fast-math assumptions.
+- Never introduce restrict, alignment promises or unchecked overflow/alias assumptions.
+- Signed reduction regrouping requires representable bounds for EVERY intermediate, not only
+  the final sum; otherwise decline. Do not reassociate floating-point arithmetic.
+- Prefer portable source for the assigned target. Target-specific intrinsics require an optional
+  versioned "contract" with schema_version 1, mode "baseline-intrinsics", the assigned "target"
+  and "language", and "required_features" limited to neon on linux-aarch64 or sse2 on linux-x86_64.
+  Unsupported intrinsics, AVX, assembly and hidden target flags are rejected. Portable contracts
+  use mode "portable" and an empty required_features list.
 - Make one coherent transformation; fixed tests, sanitizers and benchmarks will check it.
 - {untrusted}
 
@@ -236,20 +244,21 @@ class ModelPatchBackend(_StructuredCaller):
         def check(value):
             if "decline" in value:
                 raise ModelDeclined("model declined to propose a change")
-            extra = set(value) - {"transformation", "rationale", "edits"}
+            extra = set(value) - {"transformation", "rationale", "edits", "contract"}
             require(
                 not (extra - {"schema_version", "parent_source_sha256"}),
-                "reply may contain transformation, rationale and edits only",
+                "reply may contain transformation, rationale, edits and an optional contract only",
             )
             patch = {
-                "schema_version": 1,
+                "schema_version": 2 if "contract" in value else 1,
+                **({"contract": value["contract"]} if "contract" in value else {}),
                 "parent_source_sha256": parent,  # Bound by the service, never by the model.
                 "transformation": value.get("transformation"),
                 "rationale": value.get("rationale"),
                 "edits": value.get("edits"),
             }
             data = json.dumps(patch, sort_keys=True, allow_nan=False).encode()
-            apply_patch(data, sources, parent)
+            apply_patch(data, sources, parent, compiler=request.compiler)
             return data
 
         return self.ask(

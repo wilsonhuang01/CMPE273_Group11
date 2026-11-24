@@ -1,4 +1,4 @@
-"""Architecture Agent: portable source changes under the immutable generic x86-64 profile."""
+"""Architecture Agent and the legacy frozen-example backend used by old replay fixtures."""
 
 import hashlib
 import json

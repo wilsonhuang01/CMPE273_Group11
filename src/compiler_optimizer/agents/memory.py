@@ -1,4 +1,4 @@
-"""Memory Agent: replace a known buffered reduction with a streaming reduction."""
+"""Memory Agent and legacy example sources retained for reproducible evaluation recipes."""
 
 import hashlib
 import json

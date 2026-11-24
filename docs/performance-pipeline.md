@@ -44,25 +44,23 @@ baseline fallback; exit 1 means the reference failed/was invalidated; exit 2 mea
 invalid input or operational interruption. Interrupted workflows print their task
 ID and state directory for resumption.
 
-The tiny example validates the wiring. These commands default to the x86-64
-profile, so they retain the baseline when emulated on ARM Docker Desktop.
-Native ARM64 evaluation is supported through the target-aware cohort/evaluation
-commands in [Evaluation and release](evaluation.md). Short/noisy samples, excess memory,
+The tiny example validates the wiring. Pipeline and cohort commands select the
+Docker engine's native ARM64 or x86-64 profile by default; `--target` overrides it.
+Emulated execution cannot qualify native performance claims. Short/noisy samples, excess memory,
 or insufficient gain also retain it. Deterministic unit tests cover successful
 candidate selection without relying on live timing on shared hardware.
 
 ## Structured agent output
 
 `PerformanceAgent` accepts a replaceable `PatchBackend.generate(request, sources)`.
-The default starter backend is a deterministic rule, not an LLM. It recognizes
-the exact original C sum-array source and increases stdin buffering to 64 KiB,
-with a rationale about reducing stream refill overhead. It refuses other programs
-rather than guessing a transformation. Independent checks determine whether the
-change improves a workload.
+The default backend uses bounded syntax-aware rules for a
+[documented C/C++ subset](transformations.md), including stdio buffering and
+unsigned pointwise unrolling. It abstains when grammar or proof conditions do not
+match. Independent checks determine whether a candidate improves a workload.
 
 For arbitrary supported C17/C++17 programs, use `--patch response.json` to replay
 a structured patch from a model or operator, or implement `PatchBackend` in Python.
-External model credentials and network inference are not required by the starter.
+External model credentials and network inference are not required by the rule backend.
 Memory and Architecture generators and Correctness/Critic/Benchmark roles are
 implemented in [Specialized agents](specialized-agents.md). External inference
 provider adapters and provider authentication remain deferred.

@@ -6,12 +6,12 @@ from contextlib import contextmanager
 
 import grpc
 
-from compiler_optimizer.agents.architecture import ArchitectureAgent, ExampleArchitectureBackend
+from compiler_optimizer.agents.architecture import ArchitectureAgent
 from compiler_optimizer.agents.correctness import checked_verification
 from compiler_optimizer.agents.correctness import deterministic_review as correctness_review
 from compiler_optimizer.agents.critic import deterministic_review as critic_review
 from compiler_optimizer.agents.generation import SourcePatchAgent
-from compiler_optimizer.agents.memory import ExampleMemoryBackend, MemoryAgent
+from compiler_optimizer.agents.memory import MemoryAgent
 from compiler_optimizer.agents.model import (
     ModelBudgetExceeded,
     ModelOutputError,
@@ -19,8 +19,13 @@ from compiler_optimizer.agents.model import (
     call_deadline,
 )
 from compiler_optimizer.agents.model_backends import model_backend
-from compiler_optimizer.agents.performance import ExamplePerformanceBackend, PerformanceAgent
+from compiler_optimizer.agents.performance import PerformanceAgent
 from compiler_optimizer.agents.rpc_store import AgentStore
+from compiler_optimizer.agents.rules import (
+    ArchitectureRuleBackend,
+    MemoryRuleBackend,
+    PerformanceRuleBackend,
+)
 from compiler_optimizer.shared.agent_roles import role_spec
 from compiler_optimizer.shared.agents_rpc import (
     MAX_AGENT_ARTIFACT_BYTES,
@@ -32,6 +37,7 @@ from compiler_optimizer.shared.agents_rpc import (
     wire,
 )
 from compiler_optimizer.shared.benchmarking import BenchmarkPlan
+from compiler_optimizer.shared.c_syntax import TransformationAbstained
 from compiler_optimizer.shared.contracts import validate_message
 from compiler_optimizer.shared.manifest import ContractError, require
 from compiler_optimizer.shared.measurement import measurement_work
@@ -52,9 +58,9 @@ from compiler_optimizer.storage.errors import (
 from compiler_optimizer.workers.package import unbundle
 
 GENERATORS = {
-    pb.PERFORMANCE: (PerformanceAgent, ExamplePerformanceBackend),
-    pb.MEMORY: (MemoryAgent, ExampleMemoryBackend),
-    pb.ARCHITECTURE: (ArchitectureAgent, ExampleArchitectureBackend),
+    pb.PERFORMANCE: (PerformanceAgent, PerformanceRuleBackend),
+    pb.MEMORY: (MemoryAgent, MemoryRuleBackend),
+    pb.ARCHITECTURE: (ArchitectureAgent, ArchitectureRuleBackend),
 }
 
 
@@ -77,6 +83,8 @@ def agent_errors(context):
     except ModelUnavailable as error:
         context.abort(grpc.StatusCode.UNAVAILABLE, "model unavailable: " + str(error)[:200])
     except ModelOutputError as error:
+        context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error)[:300])
+    except TransformationAbstained as error:
         context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error)[:300])
     except (ContractError, ValueError, TypeError, KeyError, StopIteration):
         context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid agent request or evidence")

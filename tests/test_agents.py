@@ -138,7 +138,7 @@ def test_architecture_agent_preserves_compiler_and_requires_runtime_gain(tmp_pat
 
 def test_architecture_refuses_unsupported_source(tmp_path):
     repository, _, task, coordinator = make_workflow(tmp_path)
-    with pytest.raises(ContractError, match="Architecture starter"):
+    with pytest.raises(ContractError, match="rule backend abstained"):
         coordinator.run(task, agent="architecture")
     assert repository.list_proposals(task) == []
     assert repository.list_agent_iterations(task)[0]["status"] == "failed"

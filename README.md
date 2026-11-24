@@ -2,6 +2,9 @@
 
 **Fault-Tolerant Distributed Compiler Optimizer Using Specialized AI Agents**
 
+Default generation uses [bounded C/C++ transformations](docs/transformations.md)
+for native ARM64 and x86-64 targets, with explicit abstention outside the supported subset.
+
 Optional [bounded debate and revision rounds](docs/debate.md) feed review findings
 back to generators while preserving frozen tests, measurement budgets and a
 held-out final evaluation gate.

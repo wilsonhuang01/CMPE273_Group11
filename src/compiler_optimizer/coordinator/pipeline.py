@@ -7,14 +7,18 @@ from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
 
-from compiler_optimizer.agents.architecture import ArchitectureAgent, ExampleArchitectureBackend
+from compiler_optimizer.agents.architecture import ArchitectureAgent
 from compiler_optimizer.agents.generation import generate_record, unpack_generation
 from compiler_optimizer.agents.journal import AgentJournal
-from compiler_optimizer.agents.memory import ExampleMemoryBackend, MemoryAgent
+from compiler_optimizer.agents.memory import MemoryAgent
 from compiler_optimizer.agents.performance import (
-    ExamplePerformanceBackend,
     FilePatchBackend,
     PerformanceAgent,
+)
+from compiler_optimizer.agents.rules import (
+    ArchitectureRuleBackend,
+    MemoryRuleBackend,
+    PerformanceRuleBackend,
 )
 from compiler_optimizer.coordinator.selection import SelectionCoordinator
 from compiler_optimizer.runtime.config import Settings
@@ -34,6 +38,7 @@ from compiler_optimizer.workers.baseline import metadata, run_baseline
 from compiler_optimizer.workers.docker_runner import DockerRunner, InfrastructureError
 from compiler_optimizer.workers.package import bundle, read_package, unbundle
 from compiler_optimizer.workers.pipeline import evaluate_proposal
+from compiler_optimizer.workers.targets import DEFAULT_IMAGES
 from compiler_optimizer.workers.verification_plan import VerificationPlan
 from compiler_optimizer.workers.verify import _snapshot
 
@@ -156,9 +161,9 @@ class PipelineCoordinator:
             )
             repository.save_request(request)
             agent_type, default_backend = {
-                pb.PERFORMANCE: (PerformanceAgent, ExamplePerformanceBackend),
-                pb.MEMORY: (MemoryAgent, ExampleMemoryBackend),
-                pb.ARCHITECTURE: (ArchitectureAgent, ExampleArchitectureBackend),
+                pb.PERFORMANCE: (PerformanceAgent, PerformanceRuleBackend),
+                pb.MEMORY: (MemoryAgent, MemoryRuleBackend),
+                pb.ARCHITECTURE: (ArchitectureAgent, ArchitectureRuleBackend),
             }[role]
             if self.agent_client is not None:
                 require(
@@ -264,6 +269,7 @@ class PipelineCoordinator:
             repository.artifacts.get(pb.ArtifactRef(**run["configuration"]["patch"])),
             unbundle(repository.artifacts.get(submission.source.bundle)),
             submission.source.bundle.sha256,
+            compiler=submission.compiler,
         )
         require(
             bundle(changed) == repository.artifacts.get(proposal.source.bundle)
@@ -444,7 +450,10 @@ def main():
     source.add_argument("--package", help="Validate and optimize a new local submission")
     source.add_argument("--task-id", help="Continue a passing baseline or resume a stored pipeline")
     parser.add_argument("--state", default="var/pipeline")
-    parser.add_argument("--image", default="cmpe273-clang:18")
+    parser.add_argument("--image")
+    parser.add_argument(
+        "--target", choices=tuple(DEFAULT_IMAGES), help="Defaults to the Docker engine's native CPU"
+    )
     parser.add_argument(
         "--patch", help="Replay structured model/operator patch instead of starter rule"
     )
@@ -456,7 +465,15 @@ def main():
     coordinator = None
     try:
         repository = Repository(args.state)
-        runner = DockerRunner(args.image, watchdog_directory=Path(args.state) / "watchdogs")
+        if args.target is None:
+            from compiler_optimizer.evaluation.__main__ import native_target
+
+            args.target = native_target()
+        runner = DockerRunner(
+            args.image or DEFAULT_IMAGES[args.target],
+            target=args.target,
+            watchdog_directory=Path(args.state) / "watchdogs",
+        )
         from compiler_optimizer.agents.rpc_client import configured_client
         from compiler_optimizer.workers.execution import local_recovery
 

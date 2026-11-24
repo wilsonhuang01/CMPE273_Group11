@@ -24,7 +24,10 @@ class SourcePatchAgent:
         require(request.role == self.role, "agent requires its assigned generation role")
         sources = unbundle(self.artifacts.get(request.source.bundle))
         patch, changed = apply_patch(
-            self.backend.generate(request, dict(sources)), sources, request.source.bundle.sha256
+            self.backend.generate(request, dict(sources)),
+            sources,
+            request.source.bundle.sha256,
+            compiler=request.compiler,
         )
         proposal = pb.Proposal(
             meta=metadata(request.meta.task_id),

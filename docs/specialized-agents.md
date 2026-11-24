@@ -1,5 +1,10 @@
 # Specialized agents
 
+Action I replaces hash-only service defaults with
+[bounded native CPU transformations](transformations.md). Legacy example backends
+remain for frozen evaluation recipes. Optional [revision rounds](debate.md) add
+criticism feedback without relaxing validation or measurement gates.
+
 The [cohort coordinator](coordinator-selection.md) implements multi-candidate weighted selection.
 Generation budgets remain per task; review and Benchmark planning budgets are
 now per proposal so each cohort member can be evaluated independently.
@@ -49,31 +54,31 @@ python -m compiler_optimizer.coordinator.pipeline \
 
 The generator refuses existing output directories and caps inputs at one million
 integers. Memory mode defaults to the v2 memory plan, so its plan argument is
-optional. The standalone command above uses x86-64 and cannot qualify when
-emulated on ARM. Native ARM64 measurements use the target-aware cohort/evaluation
-workflow and can qualify.
+optional. Standalone pipeline and cohort commands default to the native Docker
+CPU profile. An explicitly emulated target cannot qualify performance claims.
 
 ## Inputs, outputs and iteration limits
 
 The operator-owned contracts live in `shared/agent_roles.py`. Limits apply per
 task/generating role or proposal/reviewing role, not per process. The original
 single-proposal workflow delivers one candidate; the cohort runner collects
-several. These limits bound backend/planning attempts and do not introduce automatic debate or
-revision loops.
+several. These limits bound backend/planning attempts; debate revisions are opt-in
+under the separate frozen [debate policy](debate.md).
 
 - **Performance:** assignment, immutable parent source and compiler/manifest in;
   a source-only exact-text patch, rationale and versioned `Proposal` out. Two
-  generation attempts. Its existing example rule increases stdio buffering.
+  generation attempts. Its default rules buffer bounded stdio programs or unroll
+  checked unsigned pointwise kernels.
 - **Memory:** the same assignment/source contract in; a memory-oriented patch and
-  rationale out. Two attempts. The starter recognizes the exact buffered-array
-  example and replaces retained storage with a bounded integer streaming reduction,
-  removing O(count) array storage. It states the input/overflow and baseline-memory
-  assumptions explicitly. Unsupported sources require a patch backend.
+  rationale out. Two attempts. A grammar-checked buffered integer sum becomes a
+  bounded streaming reduction while preserving the allocation request/NULL check.
+  Retained heap storage is released before input processing; measured RSS must
+  establish any benefit. Unsupported shapes abstain.
 - **Architecture:** assignment, source and fixed target/compiler in; a portable
-  source patch and rationale out. Two attempts. The starter recognizes original
-  sum-array and exposes independent accumulators. It cannot change flags, target,
-  tests or fixtures, and makes no unmeasured speedup claim. No CUDA, RISC-V, SIMD
-  intrinsics, native-CPU flags or architecture-specific assembly are introduced.
+  source patch and rationale out. Two attempts. Native ARM64/x86-64 rules expose
+  bounded independent accumulators or guarded unsigned pointwise lanes. They
+  cannot change flags, target, tests or fixtures and make no unmeasured speedup
+  claim. Target-specific model/operator source needs a versioned explicit contract.
 - **Correctness:** proposal, stored job/result, fixed/generated coverage, log,
   plan/input hashes and correctness report in; a bound `approve`, `reject` or
   `abstain` review with findings out. Two review attempts. It revalidates evidence

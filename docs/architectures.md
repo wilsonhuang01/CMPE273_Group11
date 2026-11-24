@@ -1,5 +1,9 @@
 # Architecture support and hardware limits
 
+The Architecture agent's default rules support both native CPU profiles with
+[versioned source contracts](transformations.md). Pipeline/cohort CLIs select the
+native Docker CPU by default; explicit target overrides preserve emulation limits.
+
 Implemented paths are native Linux x86-64 and ARM64 C17/C++17 execution,
 **RV64GC/LP64D correctness validation using QEMU user-mode emulation inside Docker**,
 and offline CUDA-to-PTX compilation. Native CPU profiles can qualify benchmarks;

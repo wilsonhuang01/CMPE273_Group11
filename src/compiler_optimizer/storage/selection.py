@@ -185,6 +185,7 @@ class SelectionStorage:
                 self.artifacts.get(patch_ref),
                 unbundle(self.artifacts.get(request.source.bundle)),
                 request.source.bundle.sha256,
+                compiler=request.compiler,
             )
             require(
                 bundle(changed) == self.artifacts.get(proposal.source.bundle)
@@ -351,6 +352,7 @@ class SelectionStorage:
                     self.artifacts.get(self._ref(db, pref[0])),
                     unbundle(self.artifacts.get(request.source.bundle)),
                     request.source.bundle.sha256,
+                    compiler=request.compiler,
                 )
                 require(
                     bundle(changed) == self.artifacts.get(proposal.source.bundle)

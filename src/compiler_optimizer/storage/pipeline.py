@@ -234,6 +234,7 @@ class PipelineStorage:
                 self.artifacts.get(patch_ref),
                 unbundle(self.artifacts.get(request.source.bundle)),
                 request.source.bundle.sha256,
+                compiler=request.compiler,
             )
             require(
                 self.artifacts.get(proposal.source.bundle) == bundle(changed)

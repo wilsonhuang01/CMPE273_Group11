@@ -28,6 +28,10 @@ or multi-agent superiority.
 
 ## Implemented capabilities
 
+- **Generalized native CPU candidates:** syntax-aware buffering, streaming,
+  unrolling and guarded vectorization candidates for a documented C/C++ subset.
+  See [source transformations and target contracts](transformations.md).
+
 - **Bounded debate and revisions:** optional criticism-driven revision rounds,
   durable lineage/budgets and a one-shot held-out final gate. See [debate setup](debate.md).
 

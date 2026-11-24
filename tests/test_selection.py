@@ -242,11 +242,20 @@ def test_repository_recomputes_winner_and_scores_instead_of_trusting_coordinator
 
 
 def test_duplicate_source_snapshot_has_one_rank(cohort):
-    from compiler_optimizer.agents.performance import ExamplePerformanceBackend
+    from compiler_optimizer.agents.rules import PerformanceRuleBackend
+
+    class DuplicatePerformance:
+        def generate(self, request, sources):
+            from compiler_optimizer.shared.v1 import contracts_pb2 as pb
+
+            copy = pb.OptimizationRequest()
+            copy.CopyFrom(request)
+            copy.role = pb.PERFORMANCE
+            return PerformanceRuleBackend().generate(copy, sources)
 
     repo, runner, task, broker, _ = cohort
     coordinator = CohortCoordinator(
-        repo, runner, broker, backends={"architecture": ExamplePerformanceBackend()}
+        repo, runner, broker, backends={"architecture": DuplicatePerformance()}
     )
     audit = coordinator.run(task, agents=["performance", "architecture"])
     assert len(audit["ranking"]) == 1
