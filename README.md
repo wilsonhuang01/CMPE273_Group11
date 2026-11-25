@@ -43,6 +43,11 @@ The [autonomous worker guide](docs/autonomous-workers.md) describes
 processes. The coordinator keeps durable state and acceptance checks; trusted
 workers own Docker execution and return fenced results over RPC.
 
+[AWS infrastructure](docs/aws-infrastructure.md) defines dev, staging and production
+environments as Terraform; `./project infra up --env staging` provisions the private
+network, roles, keys, secrets and budgets after showing a saved plan, and
+`./project infra down --env staging` tears it down.
+
 ## Initial implementation scope
 
 The [implementation backlog](backlog/index.html) [(Preview)](https://html-preview.github.io/?url=https://github.com/wilsonhuang01/CMPE273_Group11/blob/main/backlog/index.html) lists remaining actions,

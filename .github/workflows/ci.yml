@@ -38,7 +38,7 @@ jobs:
       - name: Check generated message contracts
         run: python tools/generate_contracts.py --check
       - name: Test contracts, storage, and service runtime
-        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_evaluation.py
+        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_evaluation.py tests/test_infra.py
       - name: Check C formatting
         run: clang-format --dry-run --Werror examples/sum-array/main.c examples/sum-array-optimized/main.c examples/sum-array-buffered/main.c
       - name: Configure and build trusted example
@@ -56,6 +56,22 @@ jobs:
           python -c 'import compiler_optimizer.coordinator, compiler_optimizer.agents, compiler_optimizer.scheduler, compiler_optimizer.workers, compiler_optimizer.monitoring, compiler_optimizer.shared'
           python -c 'from compiler_optimizer.shared.manifest import parse_manifest; from compiler_optimizer.shared.v1 import contracts_pb2_grpc'
           python -c 'import tempfile; from compiler_optimizer.storage import Repository; temporary = tempfile.TemporaryDirectory(); assert Repository(temporary.name).list_tasks() == []; temporary.cleanup()'
+
+  infrastructure:
+    # Static checks only: no AWS credentials are available or needed here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          terraform_wrapper: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check Terraform formatting, validation and environment settings
+        run: python tools/infra.py check
 
   compose:
     runs-on: ubuntu-24.04

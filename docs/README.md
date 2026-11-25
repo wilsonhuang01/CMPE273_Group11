@@ -105,3 +105,5 @@ durable RPC dispatch, restart recovery and the host coordinator's separate state
 streaming upload, task-scoped downloads and TLS/bearer authentication.
 [Autonomous workers](autonomous-workers.md) covers scheduler/worker commands,
 capability registration, durable job dispatch, execution leases and cleanup.
+[AWS infrastructure](aws-infrastructure.md) covers the Terraform environments,
+`./project infra` provisioning/teardown, secrets, budgets and retention rules.
