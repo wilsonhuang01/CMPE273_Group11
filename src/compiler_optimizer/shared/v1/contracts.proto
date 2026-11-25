@@ -50,7 +50,8 @@ message CompilerSettings {
   repeated string flags = 6;
 }
 
-// A source-only bundle. The baseline is version 1 with no parent hash.
+// Baseline/source candidates hold a source-only bundle. Typed IR candidates hold
+// the canonical IRPassProposal JSON descriptor instead. Baseline has no parent.
 message SourceVersion {
   uint32 version = 1;
   ArtifactRef bundle = 2;
@@ -97,6 +98,22 @@ message AgentProvenance {
   string release = 7;
 }
 
+// Versioned, trusted LLVM pass recipe; arbitrary opt flags/plugins are forbidden.
+message IRVariant {
+  string build_profile = 1;
+  ArtifactRef baseline_bitcode = 2;
+  ArtifactRef optimized_bitcode = 3;
+  ArtifactRef stage_report = 4;
+}
+message IRPassProposal {
+  uint32 schema_version = 1;
+  string pipeline_id = 2;
+  string baseline_source_sha256 = 3;
+  string llvm_version = 4;
+  string target_triple = 5;
+  repeated IRVariant variants = 6;
+}
+
 message Proposal {
   Metadata meta = 1;
   string proposal_id = 2;
@@ -107,6 +124,7 @@ message Proposal {
   CompilerSettings compiler = 7;
   optional ArtifactRef structured_patch = 8;
   optional AgentProvenance agent_provenance = 9;
+  optional IRPassProposal ir = 10;
 }
 
 message VerificationJob {
@@ -124,6 +142,7 @@ message VerificationJob {
   repeated string additional_test_ids = 10;
   optional ArtifactRef verification_plan = 11;
   optional ArtifactRef verification_inputs = 12;
+  optional IRPassProposal ir = 13;
 }
 
 enum WorkerState {

@@ -118,7 +118,16 @@ class CriticAgent:
             "pipeline critic requires the assigned baseline parent",
         )
         before = unbundle(repository.artifacts.get(baseline))
-        after = unbundle(repository.artifacts.get(proposal.source.bundle))
+        if proposal.HasField("ir"):
+            from compiler_optimizer.workers.llvm_ir import validate_artifacts
+
+            validate_artifacts(repository.artifacts, proposal)
+            require(
+                self.backend is None, "LLVM critic requires the local trusted-pipeline reviewer"
+            )
+            after = before
+        else:
+            after = unbundle(repository.artifacts.get(proposal.source.bundle))
         require(set(before) == set(after), "critic requires unchanged source file membership")
 
         def action():
@@ -132,7 +141,20 @@ class CriticAgent:
                     "critic backend may return verdict, summary and findings only",
                 )
             else:
-                response = deterministic_review(context, before, after, proposal.rationale)
+                if proposal.HasField("ir"):
+                    response = {
+                        "verdict": "approve" if context["automated_passed"] else "reject",
+                        "summary": "Trusted LLVM pass chain and verification checked.",
+                        "findings": [
+                            {
+                                "code": "bounded-ir-review",
+                                "severity": "info",
+                                "message": "Approval covers only the tested domain.",
+                            }
+                        ],
+                    }
+                else:
+                    response = deterministic_review(context, before, after, proposal.rationale)
             return validate_review({**context, "role": "critic", **response}, context, pb.CRITIC)
 
         record = AgentJournal(repository, pb.CRITIC).run(

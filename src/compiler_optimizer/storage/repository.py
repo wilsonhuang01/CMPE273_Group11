@@ -287,6 +287,14 @@ class Repository(
                 db, "requests", pb.OptimizationRequest, "proposal_id", message.proposal_id
             )
             validate_proposal_for_request(message, request)
+            if message.HasField("ir"):
+                from compiler_optimizer.workers.llvm_ir import validate_artifacts
+
+                refs = validate_artifacts(self.artifacts, message)
+                for ref in refs:
+                    self._artifact(
+                        db, message.meta.task_id, ref, "llvm-evidence", owner=message.proposal_id
+                    )
             db.execute(
                 "INSERT INTO proposals VALUES (?, ?, ?)",
                 (message.proposal_id, message.meta.task_id, payload),
@@ -322,6 +330,8 @@ class Repository(
                 if proposal.meta.task_id != message.meta.task_id:
                     raise ConflictError("proposal belongs to another task")
                 source = proposal.source
+                if message.HasField("ir") != proposal.HasField("ir") or message.ir != proposal.ir:
+                    raise ConflictError("job changes the LLVM proposal")
             if (
                 message.source != source
                 or message.compiler != submission.compiler

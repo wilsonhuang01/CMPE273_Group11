@@ -28,6 +28,16 @@ def validate_evidence(report, result, job, submission, plan):
         all(report.get(key) == value for key, value in expected.items()),
         "correctness report does not match job/source/plan/log",
     )
+    if job.HasField("ir"):
+        import json
+
+        from compiler_optimizer.workers.llvm_ir import descriptor
+
+        require(
+            report.get("ir") == json.loads(descriptor(job.ir)), "correctness LLVM identity mismatch"
+        )
+    else:
+        require("ir" not in report, "unexpected LLVM correctness evidence")
     successful = result.WhichOneof("outcome") == "success"
     if job.compiler.target == "linux-riscv64":
         require(
@@ -75,3 +85,17 @@ def validate_evidence(report, result, job, submission, plan):
                 and re.fullmatch(r"[0-9a-f]{64}", rows[0]["binary_sha256"]) is not None,
                 "missing verification build evidence",
             )
+            if job.HasField("ir"):
+                profile = "normal" if "sanitizer" not in phase else plan["sanitizer"]
+                variants = [v for v in job.ir.variants if v.build_profile == profile]
+                require(len(variants) == 1, "missing LLVM build profile")
+                ref = (
+                    variants[0].baseline_bitcode
+                    if phase.startswith("baseline")
+                    else variants[0].optimized_bitcode
+                )
+                require(
+                    rows[0].get("ir_bitcode_sha256") == ref.sha256
+                    and rows[0].get("ir_build_profile") == profile,
+                    "verification executable differs from assigned LLVM bitcode",
+                )

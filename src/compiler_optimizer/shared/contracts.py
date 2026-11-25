@@ -239,6 +239,14 @@ def validate_message(message: Message) -> None:
 
             revision_context(message.revision_context_json)
         if isinstance(message, pb.Proposal):
+            if message.HasField("ir"):
+                from compiler_optimizer.workers.llvm_ir import validate_ir
+
+                validate_ir(message.ir, message.compiler, message.source.parent_source_sha256)
+                require(
+                    not message.HasField("structured_patch"),
+                    "LLVM recipes cannot carry source patches",
+                )
             require(message.source.version > 1, "proposal must derive from a parent source")
             require(0 < len(message.rationale.encode()) <= 16384, "rationale must be 1–16384 bytes")
             require(bool(TEST_ID.fullmatch(message.transformation)), "invalid transformation ID")
@@ -266,6 +274,14 @@ def validate_message(message: Message) -> None:
         _subject(message)
         require(message.attempt > 0, "attempt must start at 1")
         if isinstance(message, pb.VerificationJob):
+            if message.HasField("ir"):
+                from compiler_optimizer.workers.llvm_ir import validate_ir
+
+                require(
+                    message.WhichOneof("subject") == "proposal_id",
+                    "baseline cannot carry an LLVM proposal",
+                )
+                validate_ir(message.ir, message.compiler, message.source.parent_source_sha256)
             _unique_ids(
                 message.additional_test_ids, "additional test IDs", nonempty=False, maximum=32
             )

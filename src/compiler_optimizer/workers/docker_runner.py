@@ -14,6 +14,7 @@ from uuid import uuid4
 from compiler_optimizer.monitoring.attachment import AttachmentError, attach
 from compiler_optimizer.monitoring.watchdog import ContainerWatchdog
 from compiler_optimizer.shared.lease_context import EXECUTION_LEASE
+from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.workers.benchmark_environment import PROBE
 from compiler_optimizer.workers.instrumentation import BUILD_PROFILES
@@ -247,6 +248,40 @@ class DockerRunner:
                 "files": {
                     name: base64.b64encode(data).decode() for name, data in package.sources.items()
                 },
+                "wall_seconds": limits.compile_wall_seconds,
+                "output_bytes": limits.output_kib * 1024,
+            },
+            memory=limits.compile_memory_mib,
+            compile_mode=True,
+        )
+
+    def llvm_stage(
+        self, package, stage, *, pipeline_id, modules=(), source=None, build_profile="normal"
+    ):
+        from compiler_optimizer.workers.llvm_policy import PIPELINES, STAGES, TRIPLES
+
+        require(stage in STAGES and pipeline_id in PIPELINES, "unsupported LLVM stage/pipeline")
+        require(
+            self.target in TRIPLES and self.native_execution, "LLVM requires a native CPU worker"
+        )
+        self._check_profile(build_profile)
+        limits = package.manifest.limits
+        return self._invoke(
+            {
+                "mode": "llvm",
+                "stage": stage,
+                "target": self.target,
+                "pipeline_id": pipeline_id,
+                "llvm_version": self.version,
+                "language": package.manifest.language,
+                "build_profile": build_profile,
+                "source": source,
+                "files": {
+                    name: base64.b64encode(data).decode() for name, data in package.sources.items()
+                }
+                if stage == "emit"
+                else {},
+                "modules": [base64.b64encode(data).decode() for data in modules],
                 "wall_seconds": limits.compile_wall_seconds,
                 "output_bytes": limits.output_kib * 1024,
             },

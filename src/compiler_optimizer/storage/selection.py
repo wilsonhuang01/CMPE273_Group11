@@ -21,6 +21,7 @@ from compiler_optimizer.shared.selection import (
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.storage.errors import ConflictError, StateError, StorageError
 from compiler_optimizer.storage.pipeline import reference
+from compiler_optimizer.workers.llvm_policy import PIPELINES
 from compiler_optimizer.workers.package import bundle, unbundle
 from compiler_optimizer.workers.verification_plan import VerificationPlan
 
@@ -74,6 +75,7 @@ class SelectionStorage:
                     "benchmark_plan",
                     "backend_kind",
                     "backend_patch",
+                    "ir_pipeline_id",
                 }
                 for m in members
             ),
@@ -131,9 +133,22 @@ class SelectionStorage:
                     role_spec(request.role).objective is not None, "reviewer cannot be a candidate"
                 )
                 require(
-                    member.get("backend_kind", "starter") in ("starter", "patch", "custom"),
+                    member.get("backend_kind", "starter")
+                    in ("starter", "patch", "custom", "llvm-ir"),
                     "unknown generation backend kind",
                 )
+                if member.get("backend_kind") == "llvm-ir":
+                    require(
+                        member.get("ir_pipeline_id") in PIPELINES
+                        and member.get("backend_patch") is None,
+                        "invalid frozen LLVM pipeline",
+                    )
+                    require(
+                        debate_policy_ref is None,
+                        "LLVM v1 does not support source debate revisions",
+                    )
+                else:
+                    require("ir_pipeline_id" not in member, "unexpected LLVM pipeline")
                 if member.get("backend_patch") is not None:
                     pref = pb.ArtifactRef(**member["backend_patch"])
                     patch = parse_patch(self.artifacts.get(pref))
@@ -172,6 +187,35 @@ class SelectionStorage:
                 self._begin_debate(db, task_id, debate_policy_ref, members)
         return True
 
+    def _check_candidate_recipe(self, db, task_id, proposal, request, ref):
+        member = self._selection_member(db, task_id, proposal.proposal_id)
+        if proposal.HasField("ir"):
+            from compiler_optimizer.workers.llvm_ir import validate_artifacts
+
+            require(
+                member.get("backend_kind") == "llvm-ir"
+                and member["ir_pipeline_id"] == proposal.ir.pipeline_id
+                and ref == proposal.source.bundle,
+                "LLVM proposal differs from frozen recipe",
+            )
+            validate_artifacts(self.artifacts, proposal)
+        else:
+            require(
+                member.get("backend_kind") != "llvm-ir", "LLVM member requires a typed proposal"
+            )
+            patch, changed = apply_patch(
+                self.artifacts.get(ref),
+                unbundle(self.artifacts.get(request.source.bundle)),
+                request.source.bundle.sha256,
+                compiler=request.compiler,
+            )
+            require(
+                bundle(changed) == self.artifacts.get(proposal.source.bundle)
+                and patch["rationale"] == proposal.rationale
+                and patch["transformation"] == proposal.transformation,
+                "candidate patch mismatch",
+            )
+
     def register_selection_patch(self, task_id, proposal_id, patch_ref):
         with self._transaction() as db:
             self._task(db, task_id, running=True)
@@ -181,18 +225,7 @@ class SelectionStorage:
             proposal = self._load(db, "proposals", pb.Proposal, "proposal_id", proposal_id)
             request = self._load(db, "requests", pb.OptimizationRequest, "proposal_id", proposal_id)
             validate_proposal_for_request(proposal, request)
-            patch, changed = apply_patch(
-                self.artifacts.get(patch_ref),
-                unbundle(self.artifacts.get(request.source.bundle)),
-                request.source.bundle.sha256,
-                compiler=request.compiler,
-            )
-            require(
-                bundle(changed) == self.artifacts.get(proposal.source.bundle)
-                and patch["rationale"] == proposal.rationale
-                and patch["transformation"] == proposal.transformation,
-                "selection patch/proposal mismatch",
-            )
+            self._check_candidate_recipe(db, task_id, proposal, request, patch_ref)
             prior = db.execute(
                 "SELECT key FROM task_artifacts WHERE task_id=? AND owner_id=? "
                 "AND kind='selection-patch'",
@@ -348,20 +381,14 @@ class SelectionStorage:
                     (task_id, identifier),
                 ).fetchone()
                 require(pref is not None, "generated patch evidence is missing")
-                patch, changed = apply_patch(
-                    self.artifacts.get(self._ref(db, pref[0])),
-                    unbundle(self.artifacts.get(request.source.bundle)),
-                    request.source.bundle.sha256,
-                    compiler=request.compiler,
-                )
-                require(
-                    bundle(changed) == self.artifacts.get(proposal.source.bundle)
-                    and patch["rationale"] == proposal.rationale
-                    and patch["transformation"] == proposal.transformation,
-                    "candidate patch mismatch",
-                )
+                self._check_candidate_recipe(db, task_id, proposal, request, self._ref(db, pref[0]))
             self.artifacts.get(proposal.source.bundle)
             candidate["source_sha256"] = proposal.source.bundle.sha256
+            if proposal.HasField("ir"):
+                from compiler_optimizer.workers.llvm_ir import descriptor
+
+                candidate["representation"] = "llvm-ir-v1"
+                candidate["ir"] = json.loads(descriptor(proposal.ir))
             all_results = [
                 decode_message(pb.VerificationResult, r[0])
                 for r in db.execute(
@@ -595,6 +622,9 @@ class SelectionStorage:
             "ranking": [c["proposal_id"] for c in unique],
             "candidates": candidates,
         }
+        if selected is not None and selected.get("representation") == "llvm-ir-v1":
+            audit["selected_representation"] = "llvm-ir-v1"
+            audit["selected_ir"] = selected["ir"]
         if debate is not None:
             audit["debate"] = {
                 "policy": reference(self._ref(db, debate["policy_key"])),

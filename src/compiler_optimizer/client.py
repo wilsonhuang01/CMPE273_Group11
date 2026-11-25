@@ -80,6 +80,44 @@ def prepare_upload(package, request_file, target=""):
     return header
 
 
+def _write_selected_ir(data, report, refs, artifacts, staging):
+    from compiler_optimizer.workers.instrumentation import BUILD_PROFILES
+    from compiler_optimizer.workers.llvm_ir import descriptor
+    from compiler_optimizer.workers.llvm_policy import PIPELINES, TRIPLES
+
+    ir = ParseDict(json.loads(data), pb.IRPassProposal())
+    profiles = [v.build_profile for v in ir.variants]
+    require(
+        ir.schema_version == 1
+        and ir.pipeline_id in PIPELINES
+        and ir.target_triple in TRIPLES.values()
+        and 2 <= len(profiles) <= 3
+        and len(set(profiles)) == len(profiles)
+        and "normal" in profiles
+        and set(profiles) <= BUILD_PROFILES.keys(),
+        "invalid selected LLVM descriptor",
+    )
+    require(
+        data == descriptor(ir) and json.loads(data) == report.get("selected_ir"),
+        "selected LLVM descriptor differs from selection report",
+    )
+    (staging / "selected-ir.json").write_bytes(data)
+    directory = staging / "ir"
+    directory.mkdir()
+    for variant in ir.variants:
+        for role, ref in (
+            ("baseline", variant.baseline_bitcode),
+            ("optimized", variant.optimized_bitcode),
+            ("stages", variant.stage_report),
+        ):
+            validate_reference(ref)
+            require(refs.get(ref.sha256) == ref, "unregistered selected LLVM artifact")
+            suffix = ".json" if role == "stages" else ".bc"
+            shutil.copyfile(
+                artifacts / ref.sha256, directory / (variant.build_profile + "-" + role + suffix)
+            )
+
+
 class OptimizerClient:
     def __init__(self, channel, *, token="", timeout=60):
         validate_token(token)
@@ -190,13 +228,17 @@ class OptimizerClient:
             if result.HasField("selected_source"):
                 validate_reference(result.selected_source.bundle, MAX_PACKAGE_BYTES)
                 data = (artifacts / result.selected_source.bundle.sha256).read_bytes()
-                sources = unbundle(data)
-                (staging / "selected-source.zip").write_bytes(data)
-                for name, contents in sources.items():
-                    source = staging / "source" / name
-                    source.parent.mkdir(parents=True, exist_ok=True)
-                    with source.open("xb") as stream:
-                        stream.write(contents)
+                report = json.loads((staging / "report.json").read_bytes())
+                if report.get("selected_representation") == "llvm-ir-v1":
+                    _write_selected_ir(data, report, refs, artifacts, staging)
+                else:
+                    sources = unbundle(data)
+                    (staging / "selected-source.zip").write_bytes(data)
+                    for name, contents in sources.items():
+                        source = staging / "source" / name
+                        source.parent.mkdir(parents=True, exist_ok=True)
+                        with source.open("xb") as stream:
+                            stream.write(contents)
             # Reserve the destination exclusively; never replace an existing directory.
             output.mkdir(mode=0o700)
             try:
