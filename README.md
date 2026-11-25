@@ -8,6 +8,9 @@ for native ARM64 and x86-64 targets, with explicit abstention outside the suppor
 Optional [LLVM IR pass proposals](docs/llvm-ir.md) use pinned LLVM 18 tools and
 trusted pass recipes through the same native verification and selection gates.
 
+The [bounded MLIR kernel path](docs/mlir.md) tiles typed integer array-add and
+scale kernels, lowers to native code and checks every result with an independent oracle.
+
 Optional [bounded debate and revision rounds](docs/debate.md) feed review findings
 back to generators while preserving frozen tests, measurement budgets and a
 held-out final evaluation gate.

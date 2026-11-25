@@ -255,6 +255,24 @@ class DockerRunner:
             compile_mode=True,
         )
 
+    def mlir_stage(self, package, stage, module):
+        from compiler_optimizer.workers.mlir_policy import PIPELINES
+
+        require(stage in PIPELINES and self.native_execution, "unsupported MLIR stage/worker")
+        limits = package.manifest.limits
+        return self._invoke(
+            {
+                "mode": "mlir",
+                "stage": stage,
+                "llvm_version": self.version,
+                "module": base64.b64encode(module).decode(),
+                "wall_seconds": limits.compile_wall_seconds,
+                "output_bytes": limits.output_kib * 1024,
+            },
+            memory=limits.compile_memory_mib,
+            compile_mode=True,
+        )
+
     def llvm_stage(
         self, package, stage, *, pipeline_id, modules=(), source=None, build_profile="normal"
     ):

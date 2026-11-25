@@ -276,8 +276,41 @@ def llvm_main(request):
     print(json.dumps(report))
 
 
+def mlir_main(request):
+    if __package__:
+        from .mlir_policy import PIPELINES
+    else:
+        from mlir_policy import PIPELINES
+    recipe = PIPELINES[request["stage"]]
+    identity = subprocess.run(
+        [recipe[0], "--version"], capture_output=True, timeout=5, check=True
+    ).stdout.decode()
+    if request["llvm_version"] not in identity.split():
+        raise ValueError("MLIR tool differs from pinned Clang version")
+    data = base64.b64decode(request["module"], validate=True)
+    if not 0 < len(data) <= MAX_BINARY_BYTES:
+        raise ValueError("invalid MLIR input size")
+    source, output = Path("/work/src/kernel.mlir"), Path("/work/build/program")
+    source.write_bytes(data)
+    source.chmod(0o444)
+    report = execute(
+        [*recipe, str(source), "-o", str(output)],
+        b"",
+        request["wall_seconds"],
+        request["output_bytes"],
+        compile_mode=True,
+    )
+    if report["failure"] is None:
+        if not output.is_file() or not 0 < output.stat().st_size <= MAX_BINARY_BYTES:
+            raise ValueError("invalid MLIR output")
+        report["binary"] = base64.b64encode(output.read_bytes()).decode()
+    print(json.dumps(report))
+
+
 def main():
     request = json.load(sys.stdin)
+    if request["mode"] == "mlir":
+        return mlir_main(request)
     if request["mode"] == "llvm":
         return llvm_main(request)
     if request["mode"] not in ("compile", "execute"):
