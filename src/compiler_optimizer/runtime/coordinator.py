@@ -87,6 +87,9 @@ class CoordinatorService(rpc.CoordinatorServiceServicer):
             selection = self.repository.get_selection_session(request.task_id)
             if cached is None:
                 cached = self.repository.selection_report(request.task_id)
+            compile_report = self.repository.cuda_task_report(request.task_id)
+            if compile_report is not None:
+                cached = compile_report
             result = pb.OptimizationResult(
                 task_id=request.task_id,
                 status=task["status"],

@@ -66,7 +66,14 @@ the selected controlled CPU target, and ordered flags. For `linux-x86_64` the fl
 optimization and warning flags. `linux-riscv64` uses the controlled cross-compiler
 flags and correctness-only emulator policy in [Architecture support](architectures.md).
 Workers may advertise supported CPU targets without duplicates. CUDA is
-not an admitted CPU language or execution target.
+not an admitted CPU language or execution target. The separate compile-only
+`cuda17` language uses `nvcc` 13.0.x, a pinned image, target `cuda-ptx`, and fixed
+`--ptx --std=c++17 --gpu-architecture=compute_75 -O2
+--compiler-bindir=/usr/bin/g++-13` flags. CUDA manifests require exactly one `.cu`
+source and empty tests/benchmark IDs. CUDA submissions and source proposals use
+the same intake and version contracts; `VerificationJob`/`VerificationResult`
+explicitly reject CUDA. The task API returns compile audits and artifacts instead
+of verified/selected results. See [Architecture support](architectures.md).
 
 C++17 uses `-std=c++17`. Source arguments, controlled include paths, `-lm`, and the
 output path are appended by the worker as specified in the workload contract;

@@ -99,6 +99,12 @@ def package_from_files(files: dict[str, bytes]) -> SubmissionPackage:
         for name, data in files.items()
         if name in required or (name.endswith((".h", ".hpp")) and name not in fixtures)
     }
+    if manifest.language == "cuda17":
+        require(
+            set(sources) == set(manifest.sources)
+            and 0 < len(sources[manifest.sources[0]]) <= 1024**2,
+            "compile-only CUDA requires one 1 byte–1 MiB source without submission headers",
+        )
     return SubmissionPackage(manifest, files, sources, bundle(files), bundle(sources))
 
 

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "cuda-vector-add",
+  "language": "cuda17",
+  "sources": ["vector_add.cu"],
+  "tests": [],
+  "benchmark_test_ids": [],
+  "limits": {
+    "compile_wall_seconds": 60,
+    "compile_memory_mib": 2048,
+    "run_wall_seconds": 1,
+    "run_memory_mib": 128,
+    "output_kib": 64
+  }
+}

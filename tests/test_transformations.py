@@ -241,8 +241,9 @@ def test_comments_and_strings_do_not_trigger_source_contract_markers():
 
 def test_unsupported_target_or_changed_flags_abstain():
     package = read_package(FIXTURES / "unsigned-scale")
-    request = assignment(package, pb.ARCHITECTURE, "linux-riscv64")
-    with pytest.raises(TransformationAbstained, match="native CPU"):
+    request = assignment(package, pb.ARCHITECTURE)
+    request.compiler.target = "unsupported"
+    with pytest.raises(TransformationAbstained, match="CPU target"):
         ArchitectureRuleBackend().generate(request, package.sources)
     request = assignment(package, pb.ARCHITECTURE)
     request.compiler.flags.append("-ffast-math")
@@ -255,6 +256,7 @@ def test_unsupported_target_or_changed_flags_abstain():
     [
         ("bounded-echo", PerformanceRuleBackend),
         ("buffered-total", MemoryRuleBackend),
+        ("unsigned-scale", ArchitectureRuleBackend),
     ],
 )
 def test_portable_riscv_candidates_remain_available_for_correctness_only(name, backend_type):

@@ -22,6 +22,7 @@ from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.shared.workflow import validate_workflow
 from compiler_optimizer.storage.artifacts import ArtifactStore
 from compiler_optimizer.storage.concurrency import ConcurrencyStorage
+from compiler_optimizer.storage.cuda import CUDAStorage
 from compiler_optimizer.storage.debate import DebateStorage
 from compiler_optimizer.storage.errors import ConflictError, NotFoundError, StateError
 from compiler_optimizer.storage.execution import ExecutionStorage
@@ -36,6 +37,7 @@ def _now() -> int:
 
 
 class Repository(
+    CUDAStorage,
     PipelineStorage,
     SelectionStorage,
     RecoveryStorage,
@@ -165,6 +167,11 @@ class Repository(
         payload = encode_message(message)
         configuration = None if execution is None else validate_workflow(execution)
         if execution is not None:
+            require(
+                message.manifest.language != "cuda17"
+                or execution.get("execution_backend", "local") == "local",
+                "CUDA compile-only tasks require the local execution backend",
+            )
             from compiler_optimizer.workers.package import package_from_files, unbundle
 
             package = package_from_files(unbundle(self.artifacts.get(message.package)))

@@ -48,7 +48,7 @@ class ExecutionStorage:
         return True
 
     def checkpoint_execution(self, task_id, stage):
-        if stage not in {"baseline", "optimizing"}:
+        if stage not in {"baseline", "optimizing", "compiling"}:
             raise ValueError("invalid execution checkpoint")
         with self._transaction() as db:
             db.execute(

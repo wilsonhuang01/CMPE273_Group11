@@ -42,4 +42,6 @@ def validate_upload_header(header):
     require(0 < header.meta.created_at_unix_ms <= 253402300799999, "invalid upload timestamp")
     validate_reference(header.package, MAX_PACKAGE_BYTES)
     require(header.package.size_bytes > 0, "empty package")
-    require(header.target == "" or header.target in TARGETS, "unsupported upload target")
+    require(
+        header.target == "" or header.target in {*TARGETS, "cuda-ptx"}, "unsupported upload target"
+    )

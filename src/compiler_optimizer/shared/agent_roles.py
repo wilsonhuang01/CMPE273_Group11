@@ -35,7 +35,7 @@ ROLES = {
     ),
     pb.ARCHITECTURE: RoleSpec(
         "architecture",
-        "Improve execution for the assigned native CPU target",
+        "Propose changes for the assigned target; emulation and PTX remain unqualified",
         ("assignment", "source", "fixed target/compiler"),
         "structured source patch and rationale",
         2,

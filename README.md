@@ -226,10 +226,14 @@ Offline CUDA compilation is also available without a GPU:
 docker compose --profile toolchain build compiler
 docker compose --profile cuda-compile build compiler-cuda
 python -m compiler_optimizer.workers.cuda_compile examples/cuda/vector_add.cu
+# Or submit through a running local host service:
+./project client submit examples/cuda --target cuda-ptx \
+  --request-file var/cuda-request.json --wait
 ```
 
 CUDA execution remains unavailable on this machine. GPU quarantine/recovery
-decision contracts are tested without issuing hardware commands; actual NVIDIA
+contracts include a simulated device registry and fenced exclusive leases, tested
+without issuing hardware commands; actual NVIDIA
 workers, CUDA-event timing and host recovery await suitable hardware. Compile-only
 PTX artifacts explicitly carry no correctness or performance qualification.
 

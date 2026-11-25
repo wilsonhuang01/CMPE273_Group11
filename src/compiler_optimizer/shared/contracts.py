@@ -72,6 +72,19 @@ def _source(source: pb.SourceVersion) -> None:
 
 
 def _compiler(compiler: pb.CompilerSettings) -> None:
+    if compiler.language == "cuda17":
+        from compiler_optimizer.workers.cuda_compile import CUDA_FLAGS, CUDA_TARGET
+
+        require(
+            compiler.executable == "nvcc"
+            and re.fullmatch(r"13\.0\.\d+", compiler.version) is not None
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", compiler.image_digest) is not None
+            and compiler.target == CUDA_TARGET
+            and list(compiler.flags) == list(CUDA_FLAGS)
+            and not compiler.execution_profile,
+            "invalid controlled compile-only CUDA profile",
+        )
+        return
     require(compiler.language in ("c17", "cpp17"), "unsupported compiler language")
     executable = "clang" if compiler.language == "c17" else "clang++"
     require(compiler.executable == executable, "compiler executable does not match language")
@@ -278,6 +291,10 @@ def validate_message(message: Message) -> None:
     elif isinstance(message, (pb.VerificationJob, pb.VerificationResult)):
         _uuid(message.job_id, "job_id")
         _subject(message)
+        require(
+            message.compiler.language != "cuda17",
+            "CUDA compile-only cannot enter verification/selection",
+        )
         require(message.attempt > 0, "attempt must start at 1")
         if isinstance(message, pb.VerificationJob):
             if message.HasField("ir"):
