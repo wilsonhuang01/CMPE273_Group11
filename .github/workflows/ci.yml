@@ -38,7 +38,7 @@ jobs:
       - name: Check generated message contracts
         run: python tools/generate_contracts.py --check
       - name: Test contracts, storage, and service runtime
-        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_evaluation.py tests/test_infra.py
+        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_evaluation.py tests/test_infra.py
       - name: Check C formatting
         run: clang-format --dry-run --Werror examples/sum-array/main.c examples/sum-array-optimized/main.c examples/sum-array-buffered/main.c
       - name: Configure and build trusted example
@@ -113,12 +113,20 @@ jobs:
           TRANSFORMATION_INTEGRATION_TESTS: "1"
           LLVM_INTEGRATION_TESTS: "1"
         run: python -m pytest --basetemp="${RUNNER_TEMP}/compiler-optimizer-tests" tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_dispatch_docker.py tests/test_transfer_docker.py tests/test_fleet_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_concurrency_docker.py tests/test_agent_rpc_docker.py tests/test_debate_docker.py tests/test_transformations_docker.py tests/test_llvm_ir_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py
+      - name: Test Action L correctness domains and coverage-guided fuzzing
+        env:
+          BASELINE_DOCKER_TESTS: "1"
+          COMPILER_IMAGE: cmpe273-clang:18
+          COMPILER_TARGET: linux-x86_64
+        run: python -m pytest --basetemp="${RUNNER_TEMP}/action-l-tests" tests/test_correctness_domains_docker.py -v
       - name: Preserve malformed sandbox protocol evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: sandbox-protocol-diagnostics
-          path: ${{ runner.temp }}/compiler-optimizer-tests/**/protocol-error.json
+          path: |
+            ${{ runner.temp }}/compiler-optimizer-tests/**/protocol-error.json
+            ${{ runner.temp }}/action-l-tests/**/protocol-error.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Write persistent artifact

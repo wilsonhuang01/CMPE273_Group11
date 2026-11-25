@@ -2,6 +2,14 @@
 
 BUILD_PROFILES = {
     "normal": [],
+    "fuzzer": [
+        "-DCO_FUZZ=1",
+        "-fsanitize=fuzzer,undefined,bounds",
+        "-fno-sanitize-recover=all",
+        "-fprofile-instr-generate",
+        "-fcoverage-mapping",
+        "-gline-tables-only",
+    ],
     "undefined": [
         "-fsanitize=undefined,bounds",
         "-fno-sanitize-recover=all",

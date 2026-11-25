@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "correctness-reverse",
+  "language": "cpp17",
+  "sources": [
+    "main.cpp"
+  ],
+  "tests": [
+    {
+      "id": "fixed",
+      "stdin": "fixed.in",
+      "expected_stdout": "fixed.out",
+      "args": []
+    }
+  ],
+  "benchmark_test_ids": [
+    "fixed"
+  ],
+  "limits": {
+    "compile_wall_seconds": 30,
+    "compile_memory_mib": 1024,
+    "run_wall_seconds": 2,
+    "run_memory_mib": 256,
+    "output_kib": 64
+  }
+}

@@ -378,4 +378,8 @@ def validate_result_for_job(result: pb.VerificationResult, job: pb.VerificationJ
             "benchmark coverage differs from job",
         )
     elif result.failure.HasField("test_id"):
-        require(result.failure.test_id in test_ids, "failure references an unknown test")
+        require(
+            result.failure.test_id in test_ids
+            or (job.HasField("verification_plan") and result.failure.test_id == "coverage-fuzz"),
+            "failure references an unknown test",
+        )

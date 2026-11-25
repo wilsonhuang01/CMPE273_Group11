@@ -23,3 +23,4 @@ RUN clang-18 -O2 -Wall -Wextra /opt/compiler-worker/measure.c -o /opt/compiler-w
 LABEL compiler-optimizer.measurement-version="2"
 # The trusted supervisor drops the compiler/program to UID/GID 10001.
 ENTRYPOINT ["python3", "/opt/compiler-worker/supervisor.py"]
+COPY src/compiler_optimizer/workers/fuzz_policy.py src/compiler_optimizer/workers/fuzz_runtime.py /opt/compiler-worker/

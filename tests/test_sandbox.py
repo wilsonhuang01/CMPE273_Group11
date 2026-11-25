@@ -8,7 +8,12 @@ from unittest.mock import Mock
 import pytest
 
 from compiler_optimizer.monitoring import attachment, watchdog
-from compiler_optimizer.workers.policy import COMMON_SYSCALLS, POLICY_JSON, validate_host_config
+from compiler_optimizer.workers.policy import (
+    COMMON_SYSCALLS,
+    FUZZ_POLICY_JSON,
+    POLICY_JSON,
+    validate_host_config,
+)
 
 
 def config():
@@ -172,3 +177,19 @@ def test_watchdog_crash_interrupts_host_attachment(monkeypatch):
     guard.process.poll.return_value = 1
     with pytest.raises(attachment.AttachmentError, match="watchdog exited"):
         attachment.attach("unused", b"", guard, wall_seconds=10)
+
+
+def test_fuzzer_budget_cannot_weaken_default_policy():
+    current = config()
+    current["PidsLimit"] = 8
+    with pytest.raises(ValueError, match="PidsLimit"):
+        validate_host_config(current, memory=256, compile_mode=False, mounts={"/tmp": "bounded"})
+    current["SecurityOpt"] = ["no-new-privileges", "seccomp=" + FUZZ_POLICY_JSON]
+    validate_host_config(
+        current, memory=256, compile_mode=False, mounts={"/tmp": "bounded"}, fuzz_mode=True
+    )
+    current["NetworkMode"] = "host"
+    with pytest.raises(ValueError, match="NetworkMode"):
+        validate_host_config(
+            current, memory=256, compile_mode=False, mounts={"/tmp": "bounded"}, fuzz_mode=True
+        )

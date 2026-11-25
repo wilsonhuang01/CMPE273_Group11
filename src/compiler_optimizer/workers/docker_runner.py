@@ -19,6 +19,8 @@ from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.workers.benchmark_environment import PROBE
 from compiler_optimizer.workers.instrumentation import BUILD_PROFILES
 from compiler_optimizer.workers.policy import (
+    FUZZ_POLICY_DIGEST,
+    FUZZ_POLICY_JSON,
     POLICY_DIGEST,
     POLICY_JSON,
     POLICY_VERSION,
@@ -326,6 +328,31 @@ class DockerRunner:
             cpu_id=cpu_id,
         )
 
+    def fuzz(self, binary, policy, corpus=(), *, replay=False):
+        require(
+            self.native_execution and self.target != "linux-riscv64",
+            "libFuzzer requires a native CPU worker",
+        )
+        settings = policy.validate()
+        require(
+            0 < len(corpus) <= 64 and sum(map(len, corpus)) <= 262144, "fuzz corpus exceeds bounds"
+        )
+        require(all(0 <= len(v) <= policy.max_length for v in corpus), "invalid seed size")
+        return self._invoke(
+            {
+                "mode": "fuzz",
+                "build_profile": "fuzzer",
+                "binary": base64.b64encode(binary).decode(),
+                "policy": settings,
+                "corpus": [base64.b64encode(v).decode() for v in corpus],
+                "replay": replay,
+                "wall_seconds": policy.seconds + policy.minimize_seconds + 8,
+                "output_bytes": 2 * 1024**2,
+            },
+            memory=512,
+            compile_mode=False,
+        )
+
     def benchmark_environment(self, cpu_id=None):
         script = f"POLICY_VERSION={POLICY_VERSION}\nPOLICY_DIGEST={POLICY_DIGEST!r}\n" + PROBE
         invocation = self._invoke(
@@ -517,6 +544,8 @@ class DockerRunner:
             )
 
     def _invoke_reserved(self, payload, *, memory, compile_mode, cpu_id=None, trusted_command=None):
+        fuzz_mode = payload.get("mode") == "fuzz"
+        policy_digest = FUZZ_POLICY_DIGEST if fuzz_mode else POLICY_DIGEST
         lease = EXECUTION_LEASE.get()
         lease_token = None if lease is None else lease["lease_token"]
         if lease_token is not None and lease_token in self._recovery_cancelled:
@@ -530,7 +559,7 @@ class DockerRunner:
             with self._recovery_lock:
                 self._recovery_guards.setdefault(lease_token, set()).add(guard)
         profile = guard.directory / "seccomp.json"
-        profile.write_text(POLICY_JSON)
+        profile.write_text(FUZZ_POLICY_JSON if fuzz_mode else POLICY_JSON)
         invocation = None
         stop_reason = "completed"
         work_mounts = (
@@ -595,7 +624,9 @@ class DockerRunner:
                     "--memory-swap",
                     f"{memory}m",
                     "--pids-limit",
-                    "64"
+                    "8"
+                    if fuzz_mode
+                    else "64"
                     if compile_mode
                     else "4"
                     if self.target == "linux-riscv64"
@@ -624,7 +655,14 @@ class DockerRunner:
                     for index in range(0, len(work_mounts), 2)
                 }
             )
-            self._validate_container(name, memory, compile_mode, mounts, cpu_id)
+            self._validate_container(
+                name,
+                memory,
+                compile_mode,
+                mounts,
+                cpu_id,
+                **({"fuzz_mode": True} if fuzz_mode else {}),
+            )
             if lease is not None and lease.get("assert_live"):
                 lease["assert_live"]()
             try:
@@ -687,7 +725,7 @@ class DockerRunner:
                     )
                 if (
                     report.get("policy_version") != POLICY_VERSION
-                    or report.get("policy_digest") != POLICY_DIGEST
+                    or report.get("policy_digest") != policy_digest
                 ):
                     raise InfrastructureError("worker syscall policy does not match host policy")
                 profile = report.get("build_profile", "normal")
@@ -767,7 +805,7 @@ class DockerRunner:
                             if invocation is not None:
                                 invocation.sandbox = {
                                     "policy_version": POLICY_VERSION,
-                                    "policy_digest": POLICY_DIGEST,
+                                    "policy_digest": policy_digest,
                                     "watchdog": audit,
                                     "cpu_id": cpu_id,
                                 }
@@ -796,7 +834,9 @@ class DockerRunner:
     def _new_watchdog(self, name, wall):
         return ContainerWatchdog(self.watchdog_directory, name, wall_seconds=wall)
 
-    def _validate_container(self, name, memory, compile_mode, mounts, cpu_id=None):
+    def _validate_container(
+        self, name, memory, compile_mode, mounts, cpu_id=None, *, fuzz_mode=False
+    ):
         try:
             config = json.loads(
                 self._command(["inspect", "--format", "{{json .HostConfig}}", name]).stdout
@@ -809,6 +849,7 @@ class DockerRunner:
                 cpu_id=cpu_id,
                 target=self.target,
                 measurement_version=self.measurement_version,
+                fuzz_mode=fuzz_mode,
             )
         except (ValueError, TypeError, KeyError) as error:
             raise InfrastructureError(str(error)) from error

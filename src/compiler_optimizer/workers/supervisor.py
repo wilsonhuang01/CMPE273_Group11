@@ -19,11 +19,11 @@ from pathlib import Path
 
 if __package__:
     from .instrumentation import BUILD_PROFILES, SANITIZER_ENV
-    from .policy import POLICY_DIGEST, POLICY_VERSION
+    from .policy import FUZZ_POLICY_DIGEST, POLICY_DIGEST, POLICY_VERSION
     from .targets import X86, compiler_flags, target_profile
 else:
     from instrumentation import BUILD_PROFILES, SANITIZER_ENV
-    from policy import POLICY_DIGEST, POLICY_VERSION
+    from policy import FUZZ_POLICY_DIGEST, POLICY_DIGEST, POLICY_VERSION
     from targets import X86, compiler_flags, target_profile
 
 MAX_BINARY_BYTES = 16 * 1024**2
@@ -38,14 +38,14 @@ def _oom_count():
     return int(values.get("oom_kill", 0))
 
 
-def _limits(wall, compile_mode, emulated=False, measured=False):
+def _limits(wall, compile_mode, emulated=False, measured=False, fuzz=False):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     cpu = max(1, math.ceil(wall) + 1)
     resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_BINARY_BYTES, MAX_BINARY_BYTES))
     # RLIMIT_NPROC is host-UID-wide, including other containers. QEMU's local
     # thread budget is enforced by pids.max=4 plus a no-child-process filter.
-    process_limit = 64 if compile_mode else 4096 if emulated or measured else 1
+    process_limit = 64 if compile_mode else 4096 if emulated or measured or fuzz else 1
     resource.setrlimit(resource.RLIMIT_NPROC, (process_limit, process_limit))
     resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256) if compile_mode else (64, 64))
     if emulated and not compile_mode:
@@ -57,11 +57,24 @@ def _limits(wall, compile_mode, emulated=False, measured=False):
 
 
 def execute(
-    argv, stdin, wall, output_limit, *, compile_mode, build_profile="normal", emulated=False
+    argv,
+    stdin,
+    wall,
+    output_limit,
+    *,
+    compile_mode,
+    build_profile="normal",
+    emulated=False,
+    fuzz=False,
 ):
     started = time.perf_counter()
     oom_before = _oom_count()
-    measured = not compile_mode and not emulated and Path("/opt/compiler-worker/measure").is_file()
+    measured = (
+        not compile_mode
+        and not emulated
+        and not fuzz
+        and Path("/opt/compiler-worker/measure").is_file()
+    )
     process = subprocess.Popen(
         ["/opt/compiler-worker/measure", *argv] if measured else argv,
         stdin=subprocess.PIPE,
@@ -77,9 +90,10 @@ def execute(
             "LANG": "C",
             "LC_ALL": "C",
             "HOME": "/tmp",
+            **({"LLVM_PROFILE_FILE": "/tmp/coverage.profraw"} if fuzz else {}),
             **(SANITIZER_ENV if build_profile != "normal" else {}),
         },
-        preexec_fn=lambda: _limits(wall, compile_mode, emulated, measured),
+        preexec_fn=lambda: _limits(wall, compile_mode, emulated, measured, fuzz),
     )
     buffers = {"stdout": bytearray(), "stderr": bytearray()}
     reason = None
@@ -150,7 +164,7 @@ def execute(
         "failure": reason,
         "kernel_machine": platform.machine(),
         "policy_version": POLICY_VERSION,
-        "policy_digest": POLICY_DIGEST,
+        "policy_digest": FUZZ_POLICY_DIGEST if fuzz else POLICY_DIGEST,
         "build_profile": build_profile,
         "command": argv,
     }
@@ -309,6 +323,10 @@ def mlir_main(request):
 
 def main():
     request = json.load(sys.stdin)
+    if request["mode"] == "fuzz":
+        from fuzz_runtime import fuzz_main
+
+        return fuzz_main(request, execute)
     if request["mode"] == "mlir":
         return mlir_main(request)
     if request["mode"] == "llvm":
