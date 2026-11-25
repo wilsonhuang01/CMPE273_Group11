@@ -224,12 +224,14 @@ def main():
     parser.add_argument("--state", default="var", help="Coordinator-owned local storage directory")
     parser.add_argument("--image", help="Locally built compiler image")
     parser.add_argument("--target", choices=tuple(DEFAULT_IMAGES), default="linux-x86_64")
+    parser.add_argument("--execution-profile", choices=("", "parallel-2"), default="")
     args = parser.parse_args()
     try:
         package = read_package(args.package)
         runner = DockerRunner(
             args.image or DEFAULT_IMAGES[args.target],
             target=args.target,
+            execution_profile=args.execution_profile,
             watchdog_directory=Path(args.state) / "watchdogs",
         )
         result = run_baseline(package, Repository(args.state), runner)

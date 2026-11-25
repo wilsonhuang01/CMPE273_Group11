@@ -82,8 +82,14 @@ def _compiler(compiler: pb.CompilerSettings) -> None:
     require(compiler.image_digest.startswith("sha256:"), "image_digest must be content-addressed")
     _hash(compiler.image_digest.removeprefix("sha256:"))
     require(compiler.target in TARGETS, "unsupported target architecture")
+    require(compiler.execution_profile in ("", "parallel-2"), "unknown execution profile")
     require(
-        list(compiler.flags) == compiler_flags(compiler.target, compiler.language),
+        not compiler.execution_profile or compiler.target != "linux-riscv64",
+        "parallel execution requires native CPU target",
+    )
+    require(
+        list(compiler.flags)
+        == compiler_flags(compiler.target, compiler.language, compiler.execution_profile),
         "compiler flags must match the controlled v1 build profile",
     )
 

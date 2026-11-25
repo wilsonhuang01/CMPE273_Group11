@@ -613,6 +613,10 @@ class Repository(
                     environment.get("execution_target", "linux-x86_64") == job.compiler.target,
                     "benchmark environment target differs from verified compiler",
                 )
+                require(
+                    environment.get("execution_profile", "") == job.compiler.execution_profile,
+                    "benchmark execution profile differs from verified compiler",
+                )
         require(
             report["analysis"] == analyze(raw, plan, list(job.manifest.benchmark_test_ids)),
             "benchmark analysis differs from raw measurements",

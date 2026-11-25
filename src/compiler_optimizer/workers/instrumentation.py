@@ -2,6 +2,7 @@
 
 BUILD_PROFILES = {
     "normal": [],
+    "microbenchmark": ["-DCO_BENCHMARK=1"],
     "fuzzer": [
         "-DCO_FUZZ=1",
         "-fsanitize=fuzzer,undefined,bounds",

@@ -461,6 +461,7 @@ def main():
     parser.add_argument("--state", default="var")
     parser.add_argument("--image")
     parser.add_argument("--target", choices=tuple(DEFAULT_IMAGES), default="linux-x86_64")
+    parser.add_argument("--execution-profile", choices=("", "parallel-2"), default="")
     args = parser.parse_args()
     try:
         plan = (
@@ -472,6 +473,7 @@ def main():
         runner = DockerRunner(
             args.image or DEFAULT_IMAGES[args.target],
             target=args.target,
+            execution_profile=args.execution_profile,
             watchdog_directory=Path(args.state) / "watchdogs",
         )
         task, original, _ = _snapshot(repository, args.task_id)

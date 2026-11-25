@@ -14,13 +14,15 @@ COPY src/compiler_optimizer/workers/llvm_policy.py /opt/compiler-worker/
 COPY src/compiler_optimizer/workers/mlir_policy.py /opt/compiler-worker/
 COPY src/compiler_optimizer/workers/targets.py /opt/compiler-worker/targets.py
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends libclang-rt-18-dev \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends libclang-rt-18-dev libomp-18-dev libbenchmark-dev \
     && rm -rf /var/lib/apt/lists/*
 LABEL compiler-optimizer.verification-version="1"
-COPY docker/measure.c /opt/compiler-worker/measure.c
+COPY docker/measure.c docker/perf.h /opt/compiler-worker/
 RUN clang-18 -O2 -Wall -Wextra /opt/compiler-worker/measure.c -o /opt/compiler-worker/measure \
     && rm /opt/compiler-worker/measure.c
 LABEL compiler-optimizer.measurement-version="2"
+LABEL compiler-optimizer.parallel-version="1"
+LABEL compiler-optimizer.benchmark-tools-version="1"
 # The trusted supervisor drops the compiler/program to UID/GID 10001.
 ENTRYPOINT ["python3", "/opt/compiler-worker/supervisor.py"]
-COPY src/compiler_optimizer/workers/fuzz_policy.py src/compiler_optimizer/workers/fuzz_runtime.py /opt/compiler-worker/
+COPY src/compiler_optimizer/workers/fuzz_policy.py src/compiler_optimizer/workers/fuzz_runtime.py src/compiler_optimizer/workers/energy.py /opt/compiler-worker/

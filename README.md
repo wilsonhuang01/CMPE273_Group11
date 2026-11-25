@@ -126,7 +126,10 @@ python -m compiler_optimizer.workers.benchmark TASK_ID \
 
 See [reproducible benchmarking](docs/benchmarking.md) for CPU pinning, warmups,
 paired repetitions, runtime/memory statistics, durable reports, and conservative
-selection gates. Performance qualification requires a native Linux amd64 worker.
+selection gates. Performance qualification requires a native Linux CPU worker.
+See [benchmark tools and bounded parallel execution](docs/benchmark-tools.md) for
+opt-in two-thread OpenMP, Google Benchmark kernel adapters, and optional perf/energy
+diagnostics.
 
 ## Run the first complete Performance Agent workflow
 

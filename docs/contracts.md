@@ -244,3 +244,13 @@ and adds `Review`, `PlanBenchmark`, `PutArtifact`, `GetArtifact` and `Ping`.
 Optional `OptimizationRequest.replay_patch` and `Proposal.structured_patch` /
 `agent_provenance` fields preserve older local message formats. Existing field
 numbers are unchanged. See [agent RPC authority and validation](agent-rpc.md).
+
+## Optional native parallel execution profile
+
+`CompilerSettings.execution_profile` is empty for the original single-thread
+contract, preserving existing serialized messages. `parallel-2` selects the fixed
+native two-thread/two-CPU policy and adds exactly `-fopenmp -DCO_THREADS=2` to the
+controlled target flags. Proposals, jobs, results and benchmark evidence retain
+the same compiler identity; profiles cannot be mixed within a task. RISC-V and
+parallel fleet/IR execution are not enabled by this field. See
+[benchmark tools](benchmark-tools.md) for local execution and measurement bounds.

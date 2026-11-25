@@ -148,6 +148,18 @@ def _environment(value):
             and value["native_execution"] == (value["engine_architecture"] in ("aarch64", "arm64")),
             "invalid target-aware native execution claim",
         )
+    if "execution_profile" in value:
+        require(
+            value["execution_profile"] == "parallel-2"
+            and value.get("threads") == 2
+            and value.get("cpu_quota") == 2
+            and isinstance(value.get("cpu_ids"), list)
+            and len(value["cpu_ids"]) == 2
+            and len(set(value["cpu_ids"])) == 2
+            and value["cpu_ids"][0] == value["cpu_id"]
+            and all(type(cpu) is int and cpu in value["allowed_cpus"] for cpu in value["cpu_ids"]),
+            "invalid parallel benchmark environment",
+        )
     for key in ("engine_id", "boot_id", "cpu_model", "cpu_features_sha256", "kernel"):
         require(
             isinstance(value[key], str) and 0 < len(value[key]) <= 2048,
@@ -227,7 +239,22 @@ def validate_raw(raw, plan, test_ids):
                     require(set(samples) == {"baseline", "candidate"}, "unpaired measurements")
                 for sample in samples.values():
                     require(raw.get("environment_before") is not None, "sample without environment")
-                    _sample(sample, raw["environment_before"]["cpu_id"], complete=complete)
+                    env = raw["environment_before"]
+                    _sample(sample, env["cpu_id"], complete=complete)
+                    if "execution_profile" in env:
+                        require(
+                            all(
+                                sample.get(key) == env[key]
+                                for key in ("execution_profile", "cpu_ids", "cpu_quota", "threads")
+                            )
+                            and _number(sample.get("cpu_seconds"), positive=complete),
+                            "parallel sample resources differ from shared policy",
+                        )
+                    else:
+                        require(
+                            "execution_profile" not in sample,
+                            "parallel sample requires a bound parallel environment",
+                        )
     if not complete:
         error = raw.get("error")
         require(
@@ -264,7 +291,15 @@ def analyze(raw, plan, test_ids):
         summary["reasons"].append("emulated_worker")
     if any(
         before.get(key) != after.get(key)
-        for key in (*ENVIRONMENT_KEYS, "execution_target", "native_execution")
+        for key in (
+            *ENVIRONMENT_KEYS,
+            "execution_target",
+            "native_execution",
+            "execution_profile",
+            "cpu_ids",
+            "cpu_quota",
+            "threads",
+        )
     ):
         summary["reasons"].append("environment_changed")
     alpha = plan.alpha / (len(test_ids) * (2 if plan.objective == "memory" else 1))

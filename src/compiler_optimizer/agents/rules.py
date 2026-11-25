@@ -263,7 +263,11 @@ class PortableRuleBackend:
         supported(
             request.compiler.language == request.manifest.language
             and list(request.compiler.flags)
-            == compiler_flags(request.compiler.target, request.manifest.language),
+            == compiler_flags(
+                request.compiler.target,
+                request.manifest.language,
+                request.compiler.execution_profile,
+            ),
             "rule requires the fixed compiler language/flags",
         )
         path, original = next(iter(sources.items()))

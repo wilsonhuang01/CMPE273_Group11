@@ -51,7 +51,12 @@ def measurement_work(submission, proposal, job, result, correctness, plan, plan_
         "run_memory_mib": job.manifest.limits.run_memory_mib,
         "output_kib": job.manifest.limits.output_kib,
         "target": job.compiler.target,
-        "cpu_quota": 1,
+        "cpu_quota": 2 if job.compiler.execution_profile else 1,
+        **(
+            {"execution_profile": job.compiler.execution_profile, "threads": 2}
+            if job.compiler.execution_profile
+            else {}
+        ),
         "requested_cpu_id": plan.cpu_id,
         "serial_execution": True,
         "normal_binaries_only": True,

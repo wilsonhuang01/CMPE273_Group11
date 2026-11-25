@@ -22,8 +22,8 @@ from compiler_optimizer.workers.policy import (
     FUZZ_POLICY_DIGEST,
     FUZZ_POLICY_JSON,
     POLICY_DIGEST,
-    POLICY_JSON,
     POLICY_VERSION,
+    execution_policy,
     validate_host_config,
 )
 from compiler_optimizer.workers.targets import compiler_flags, target_profile
@@ -48,6 +48,7 @@ class Invocation:
     build_profile: str = "normal"
     command: list[str] | None = None
     cpu_seconds: float | None = None
+    perf: dict | None = None
 
     def log(self):
         return {
@@ -61,14 +62,22 @@ class Invocation:
             "build_profile": self.build_profile,
             "command": self.command,
             "cpu_seconds": self.cpu_seconds,
+            **({"perf": self.perf} if self.perf is not None else {}),
         }
 
 
 class DockerRunner:
     def __init__(
-        self, image="cmpe273-clang:18", *, watchdog_directory="var/watchdogs", target="linux-x86_64"
+        self,
+        image="cmpe273-clang:18",
+        *,
+        watchdog_directory="var/watchdogs",
+        target="linux-x86_64",
+        execution_profile="",
     ):
         self.target = target_profile(target).name
+        require(execution_profile in ("", "parallel-2"), "unknown execution profile")
+        self.execution_profile = execution_profile
         self._recovery_lock = threading.Lock()
         self._recovery_guards = {}
         self._recovery_cancelled = set()
@@ -173,12 +182,24 @@ class DockerRunner:
                     ).performance_qualification
                     and self.native_execution,
                     "docker_engine": engine_info,
-                    "cpu_quota": 1,
+                    "cpu_quota": 2 if execution_profile else 1,
                     "measurement_version": self.measurement_version,
                     "timing": "QEMU wall time and host RSS; correctness-only"
                     if self.target == "linux-riscv64"
                     else "supervised child elapsed seconds; one sample; may be emulated",
                 }
+            )
+            require(
+                not execution_profile
+                or (
+                    self.native_execution
+                    and self.measurement_version == 2
+                    and info.get("Config", {})
+                    .get("Labels", {})
+                    .get("compiler-optimizer.parallel-version")
+                    == "1"
+                ),
+                "parallel profile requires a native CPU and rebuilt parallel compiler image",
             )
             self.emulator_version = None
             if self.target == "linux-riscv64":
@@ -234,7 +255,8 @@ class DockerRunner:
             image_digest=self.image,
             language=language,
             target=self.target,
-            flags=compiler_flags(self.target, language),
+            flags=compiler_flags(self.target, language, self.execution_profile),
+            execution_profile=self.execution_profile,
         )
 
     def compile(self, package, *, build_profile="normal"):
@@ -246,6 +268,7 @@ class DockerRunner:
                 "target": self.target,
                 "build_profile": build_profile,
                 "language": package.manifest.language,
+                "execution_profile": self.execution_profile,
                 "sources": list(package.manifest.sources),
                 "files": {
                     name: base64.b64encode(data).decode() for name, data in package.sources.items()
@@ -260,6 +283,7 @@ class DockerRunner:
     def mlir_stage(self, package, stage, module):
         from compiler_optimizer.workers.mlir_policy import PIPELINES
 
+        require(not self.execution_profile, "parallel MLIR proposals are unsupported")
         require(stage in PIPELINES and self.native_execution, "unsupported MLIR stage/worker")
         limits = package.manifest.limits
         return self._invoke(
@@ -284,6 +308,7 @@ class DockerRunner:
         require(
             self.target in TRIPLES and self.native_execution, "LLVM requires a native CPU worker"
         )
+        require(not self.execution_profile, "parallel LLVM proposals are unsupported")
         self._check_profile(build_profile)
         limits = package.manifest.limits
         return self._invoke(
@@ -309,12 +334,27 @@ class DockerRunner:
             compile_mode=True,
         )
 
-    def execute(self, binary, case, package, *, build_profile="normal", cpu_id=None):
+    def execute(
+        self,
+        binary,
+        case,
+        package,
+        *,
+        build_profile="normal",
+        cpu_id=None,
+        cpu_ids=None,
+        perf=False,
+        harness=False,
+    ):
         self._check_profile(build_profile)
         limits = package.manifest.limits
         return self._invoke(
             {
                 "mode": "execute",
+                "execution_profile": self.execution_profile,
+                "perf": perf,
+                "harness": harness,
+                "cpu_ids": cpu_ids,
                 "target": self.target,
                 "build_profile": build_profile,
                 "binary": base64.b64encode(binary).decode(),
@@ -329,6 +369,7 @@ class DockerRunner:
         )
 
     def fuzz(self, binary, policy, corpus=(), *, replay=False):
+        require(not self.execution_profile, "parallel fuzzing is unsupported")
         require(
             self.native_execution and self.target != "linux-riscv64",
             "libFuzzer requires a native CPU worker",
@@ -369,6 +410,15 @@ class DockerRunner:
         if invocation.failure:
             raise InfrastructureError("benchmark environment probe failed")
         data = json.loads(invocation.stdout)
+        if self.execution_profile:
+            others = [cpu for cpu in data["allowed_cpus"] if cpu != data["cpu_id"]]
+            require(bool(others), "parallel measurements require two available CPUs")
+            data.update(
+                execution_profile=self.execution_profile,
+                threads=2,
+                cpu_quota=2,
+                cpu_ids=[data["cpu_id"], others[0]],
+            )
         data.update(
             engine_id=self._command(["info", "--format", "{{.ID}}"]).stdout.decode().strip(),
             engine_architecture=json.loads(self.hardware)["docker_engine"]["architecture"],
@@ -473,12 +523,13 @@ class DockerRunner:
             }
         return {
             "hardware": self._recovery_environment,
-            "policy_digest": POLICY_DIGEST,
+            "policy_digest": execution_policy(parallel=bool(self.execution_profile))[1],
             "platform": self.platform,
             "target": self.target,
             "emulator": list(target_profile(self.target).emulator),
             "emulator_version": self.emulator_version,
-            "cpu_quota": 1,
+            "cpu_quota": 2 if self.execution_profile else 1,
+            "execution_profile": self.execution_profile,
             "network": "none",
             "measurement_version": self.measurement_version,
         }
@@ -518,7 +569,11 @@ class DockerRunner:
             )
         capacity = Capacity.parse(self.hardware)
         with engine_window(
-            self._admission_engine, capacity, memory_mib=memory_mib, exclusive=exclusive
+            self._admission_engine,
+            capacity,
+            memory_mib=memory_mib,
+            exclusive=exclusive,
+            cpus=2 if getattr(self, "execution_profile", "") else 1,
         ):
             if exclusive:
                 remaining = self._command(
@@ -545,7 +600,31 @@ class DockerRunner:
 
     def _invoke_reserved(self, payload, *, memory, compile_mode, cpu_id=None, trusted_command=None):
         fuzz_mode = payload.get("mode") == "fuzz"
-        policy_digest = FUZZ_POLICY_DIGEST if fuzz_mode else POLICY_DIGEST
+        parallel = payload.get("execution_profile", "") == "parallel-2"
+        perf = payload.get("perf", False)
+        harness = payload.get("harness", False)
+        require(not fuzz_mode or not parallel, "parallel fuzzing is unsupported")
+        require(
+            not (perf or harness) or payload.get("mode") == "execute", "invalid runtime profile"
+        )
+        policy_json, policy_digest = execution_policy(parallel=parallel, perf=perf, harness=harness)
+        if fuzz_mode:
+            policy_json, policy_digest = FUZZ_POLICY_JSON, FUZZ_POLICY_DIGEST
+        cpu_ids = payload.get("cpu_ids")
+        if cpu_ids is not None:
+            require(
+                parallel
+                and isinstance(cpu_ids, (list, tuple))
+                and len(cpu_ids) == 2
+                and len(set(cpu_ids)) == 2
+                and all(type(v) is int and 0 <= v <= 8191 for v in cpu_ids)
+                and cpu_ids[0] == cpu_id,
+                "invalid parallel CPU affinity",
+            )
+        require(
+            not parallel or cpu_id is None or cpu_ids is not None,
+            "parallel measurement requires two pinned CPUs",
+        )
         lease = EXECUTION_LEASE.get()
         lease_token = None if lease is None else lease["lease_token"]
         if lease_token is not None and lease_token in self._recovery_cancelled:
@@ -559,7 +638,7 @@ class DockerRunner:
             with self._recovery_lock:
                 self._recovery_guards.setdefault(lease_token, set()).add(guard)
         profile = guard.directory / "seccomp.json"
-        profile.write_text(FUZZ_POLICY_JSON if fuzz_mode else POLICY_JSON)
+        profile.write_text(policy_json)
         invocation = None
         stop_reason = "completed"
         work_mounts = (
@@ -617,17 +696,27 @@ class DockerRunner:
                     "--security-opt",
                     "seccomp=" + str(profile),
                     "--cpus",
-                    "1",
-                    *([] if cpu_id is None else ["--cpuset-cpus", str(cpu_id)]),
+                    "2" if parallel and not compile_mode else "1",
+                    *(
+                        ["--cpuset-cpus", ",".join(map(str, cpu_ids))]
+                        if cpu_ids is not None
+                        else []
+                        if cpu_id is None
+                        else ["--cpuset-cpus", str(cpu_id)]
+                    ),
                     "--memory",
                     f"{memory}m",
                     "--memory-swap",
                     f"{memory}m",
                     "--pids-limit",
-                    "8"
-                    if fuzz_mode
-                    else "64"
+                    "64"
                     if compile_mode
+                    else "6"
+                    if harness
+                    else "4"
+                    if parallel
+                    else "8"
+                    if fuzz_mode
                     else "4"
                     if self.target == "linux-riscv64"
                     else "3"
@@ -662,6 +751,10 @@ class DockerRunner:
                 mounts,
                 cpu_id,
                 **({"fuzz_mode": True} if fuzz_mode else {}),
+                **({"parallel": True} if parallel else {}),
+                **({"perf": True} if perf else {}),
+                **({"harness": True} if harness else {}),
+                **({"cpu_ids": cpu_ids} if cpu_ids is not None else {}),
             )
             if lease is not None and lease.get("assert_live"):
                 lease["assert_live"]()
@@ -769,6 +862,10 @@ class DockerRunner:
                 ):
                     raise ValueError("invalid CPU resource usage")
                 invocation.cpu_seconds = cpu
+                if perf:
+                    from compiler_optimizer.workers.perf import validate_counters
+
+                    invocation.perf = validate_counters(report.get("perf"))
                 return invocation
             except (ValueError, KeyError, TypeError) as error:
                 diagnostic = guard.directory / "protocol-error.json"
@@ -808,6 +905,16 @@ class DockerRunner:
                                     "policy_digest": policy_digest,
                                     "watchdog": audit,
                                     "cpu_id": cpu_id,
+                                    **(
+                                        {
+                                            "execution_profile": "parallel-2",
+                                            "cpu_ids": cpu_ids,
+                                            "cpu_quota": 2,
+                                            "threads": 2,
+                                        }
+                                        if parallel
+                                        else {}
+                                    ),
                                 }
                         except (RuntimeError, subprocess.TimeoutExpired) as error:
                             raise InfrastructureError(
@@ -835,7 +942,18 @@ class DockerRunner:
         return ContainerWatchdog(self.watchdog_directory, name, wall_seconds=wall)
 
     def _validate_container(
-        self, name, memory, compile_mode, mounts, cpu_id=None, *, fuzz_mode=False
+        self,
+        name,
+        memory,
+        compile_mode,
+        mounts,
+        cpu_id=None,
+        *,
+        fuzz_mode=False,
+        parallel=False,
+        perf=False,
+        harness=False,
+        cpu_ids=None,
     ):
         try:
             config = json.loads(
@@ -850,6 +968,10 @@ class DockerRunner:
                 target=self.target,
                 measurement_version=self.measurement_version,
                 fuzz_mode=fuzz_mode,
+                parallel=parallel,
+                perf=perf,
+                harness=harness,
+                cpu_ids=cpu_ids,
             )
         except (ValueError, TypeError, KeyError) as error:
             raise InfrastructureError(str(error)) from error

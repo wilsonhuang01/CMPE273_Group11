@@ -50,7 +50,15 @@ def target_profile(name):
     return TARGETS[name]
 
 
-def compiler_flags(target, language):
+def compiler_flags(target, language, execution_profile=""):
     if language not in ("c17", "cpp17"):
         raise ValueError("unsupported compiler language")
-    return ["-std=c17" if language == "c17" else "-std=c++17", *target_profile(target).flags]
+    if execution_profile not in ("", "parallel-2"):
+        raise ValueError("unsupported execution profile")
+    if execution_profile and target == RISCV.name:
+        raise ValueError("parallel execution requires a native CPU target")
+    return [
+        "-std=c17" if language == "c17" else "-std=c++17",
+        *target_profile(target).flags,
+        *(["-fopenmp", "-DCO_THREADS=2"] if execution_profile else []),
+    ]
