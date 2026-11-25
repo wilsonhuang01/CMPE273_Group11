@@ -40,6 +40,7 @@ from compiler_optimizer.storage.errors import StateError, StorageError
 from compiler_optimizer.storage.pipeline import reference
 from compiler_optimizer.workers.baseline import metadata, run_baseline
 from compiler_optimizer.workers.docker_runner import DockerRunner, InfrastructureError
+from compiler_optimizer.workers.llvm_ir import IRPassAgent, IRPassBackend
 from compiler_optimizer.workers.package import read_package
 from compiler_optimizer.workers.pipeline import evaluate_proposal
 from compiler_optimizer.workers.targets import DEFAULT_IMAGES
@@ -183,6 +184,12 @@ class CohortCoordinator:
             if isinstance(backend, FilePatchBackend):
                 patch_ref = repository.artifacts.put(backend.generate(request, {}))
                 kind = "patch"
+            if isinstance(backend, IRPassBackend):
+                require(
+                    self.agent_client is None and not self.review_backends,
+                    "LLVM v1 requires local generation and review adapters",
+                )
+                kind = "llvm-ir"
             members.append(
                 {
                     "proposal_id": request.proposal_id,
@@ -193,6 +200,8 @@ class CohortCoordinator:
                     "backend_patch": None if patch_ref is None else reference(patch_ref),
                 }
             )
+            if kind == "llvm-ir":
+                members[-1]["ir_pipeline_id"] = backend.pipeline_id
         debate_ref = getattr(self, "_debate_policy_ref", None)
         if debate_ref is None:
             repository.begin_selection(task_id, policy_ref, members)
@@ -317,7 +326,14 @@ class CohortCoordinator:
             require(backend is not None, "resume requires the original custom backend adapter")
         backend = backend or starter()
         try:
-            if self.agent_client is not None:
+            if member["backend_kind"] == "llvm-ir":
+                plan = VerificationPlan.parse(
+                    repository.artifacts.get(pb.ArtifactRef(**member["verification_plan"]))
+                )
+                agent = IRPassAgent(
+                    repository, self.runner, member["ir_pipeline_id"], plan.sanitizer
+                )
+            elif self.agent_client is not None:
                 require(
                     member["backend_kind"] != "custom",
                     "RPC generators require a frozen replay patch for custom proposals",
@@ -535,6 +551,12 @@ def main():
     parser.add_argument("--benchmark-plan")
     parser.add_argument("--debate-policy", help="Operator revision limits and held-out cases JSON")
     parser.add_argument("--patch", action="append", default=[], help="ROLE=structured-patch.json")
+    parser.add_argument(
+        "--ir-pipeline",
+        action="append",
+        default=[],
+        help="ROLE=scalar-v1 or ROLE=sroa-v1 (local CPU LLVM adapter)",
+    )
     parser.add_argument("--image")
     parser.add_argument(
         "--target", choices=tuple(DEFAULT_IMAGES), help="Defaults to the Docker engine's native CPU"
@@ -554,6 +576,14 @@ def main():
             name, path = option.split("=", 1)
             require(name not in backends, "duplicate role patch")
             backends[name] = FilePatchBackend(path)
+        for option in args.ir_pipeline:
+            name, pipeline = option.split("=", 1)
+            require(name not in backends, "duplicate role backend")
+            backends[name] = IRPassBackend(pipeline)
+        require(
+            not (args.ir_pipeline and args.debate_policy),
+            "LLVM v1 does not support source debate revisions",
+        )
         repository = Repository(args.state)
         if args.cancel:
             require(args.task_id is not None, "--cancel requires --task-id")

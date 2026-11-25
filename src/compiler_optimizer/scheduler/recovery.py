@@ -68,7 +68,7 @@ class GuardedRunner:
 
     def __getattr__(self, name):
         value = getattr(self.worker.runner, name)
-        if name not in ("compile", "execute", "benchmark_environment"):
+        if name not in ("compile", "llvm_stage", "execute", "benchmark_environment"):
             return value
 
         def guarded(*args, **kwargs):

@@ -28,6 +28,10 @@ or multi-agent superiority.
 
 ## Implemented capabilities
 
+- **Versioned LLVM IR proposals:** pinned LLVM tools, immutable bitcode, trusted
+  pass recipes and native verification/review/benchmark selection. See
+  [LLVM setup and limits](llvm-ir.md).
+
 - **Generalized native CPU candidates:** syntax-aware buffering, streaming,
   unrolling and guarded vectorization candidates for a documented C/C++ subset.
   See [source transformations and target contracts](transformations.md).

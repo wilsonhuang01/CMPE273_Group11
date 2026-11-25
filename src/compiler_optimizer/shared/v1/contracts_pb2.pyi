@@ -217,8 +217,36 @@ class AgentProvenance(_message.Message):
     release: str
     def __init__(self, schema_version: _Optional[int] = ..., role: _Optional[_Union[AgentRole, str]] = ..., service_id: _Optional[str] = ..., backend: _Optional[str] = ..., request_sha256: _Optional[str] = ..., response_sha256: _Optional[str] = ..., release: _Optional[str] = ...) -> None: ...
 
+class IRVariant(_message.Message):
+    __slots__ = ("build_profile", "baseline_bitcode", "optimized_bitcode", "stage_report")
+    BUILD_PROFILE_FIELD_NUMBER: _ClassVar[int]
+    BASELINE_BITCODE_FIELD_NUMBER: _ClassVar[int]
+    OPTIMIZED_BITCODE_FIELD_NUMBER: _ClassVar[int]
+    STAGE_REPORT_FIELD_NUMBER: _ClassVar[int]
+    build_profile: str
+    baseline_bitcode: ArtifactRef
+    optimized_bitcode: ArtifactRef
+    stage_report: ArtifactRef
+    def __init__(self, build_profile: _Optional[str] = ..., baseline_bitcode: _Optional[_Union[ArtifactRef, _Mapping]] = ..., optimized_bitcode: _Optional[_Union[ArtifactRef, _Mapping]] = ..., stage_report: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+
+class IRPassProposal(_message.Message):
+    __slots__ = ("schema_version", "pipeline_id", "baseline_source_sha256", "llvm_version", "target_triple", "variants")
+    SCHEMA_VERSION_FIELD_NUMBER: _ClassVar[int]
+    PIPELINE_ID_FIELD_NUMBER: _ClassVar[int]
+    BASELINE_SOURCE_SHA256_FIELD_NUMBER: _ClassVar[int]
+    LLVM_VERSION_FIELD_NUMBER: _ClassVar[int]
+    TARGET_TRIPLE_FIELD_NUMBER: _ClassVar[int]
+    VARIANTS_FIELD_NUMBER: _ClassVar[int]
+    schema_version: int
+    pipeline_id: str
+    baseline_source_sha256: str
+    llvm_version: str
+    target_triple: str
+    variants: _containers.RepeatedCompositeFieldContainer[IRVariant]
+    def __init__(self, schema_version: _Optional[int] = ..., pipeline_id: _Optional[str] = ..., baseline_source_sha256: _Optional[str] = ..., llvm_version: _Optional[str] = ..., target_triple: _Optional[str] = ..., variants: _Optional[_Iterable[_Union[IRVariant, _Mapping]]] = ...) -> None: ...
+
 class Proposal(_message.Message):
-    __slots__ = ("meta", "proposal_id", "role", "source", "rationale", "transformation", "compiler", "structured_patch", "agent_provenance")
+    __slots__ = ("meta", "proposal_id", "role", "source", "rationale", "transformation", "compiler", "structured_patch", "agent_provenance", "ir")
     META_FIELD_NUMBER: _ClassVar[int]
     PROPOSAL_ID_FIELD_NUMBER: _ClassVar[int]
     ROLE_FIELD_NUMBER: _ClassVar[int]
@@ -228,6 +256,7 @@ class Proposal(_message.Message):
     COMPILER_FIELD_NUMBER: _ClassVar[int]
     STRUCTURED_PATCH_FIELD_NUMBER: _ClassVar[int]
     AGENT_PROVENANCE_FIELD_NUMBER: _ClassVar[int]
+    IR_FIELD_NUMBER: _ClassVar[int]
     meta: Metadata
     proposal_id: str
     role: AgentRole
@@ -237,10 +266,11 @@ class Proposal(_message.Message):
     compiler: CompilerSettings
     structured_patch: ArtifactRef
     agent_provenance: AgentProvenance
-    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., rationale: _Optional[str] = ..., transformation: _Optional[str] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., structured_patch: _Optional[_Union[ArtifactRef, _Mapping]] = ..., agent_provenance: _Optional[_Union[AgentProvenance, _Mapping]] = ...) -> None: ...
+    ir: IRPassProposal
+    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., proposal_id: _Optional[str] = ..., role: _Optional[_Union[AgentRole, str]] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., rationale: _Optional[str] = ..., transformation: _Optional[str] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., structured_patch: _Optional[_Union[ArtifactRef, _Mapping]] = ..., agent_provenance: _Optional[_Union[AgentProvenance, _Mapping]] = ..., ir: _Optional[_Union[IRPassProposal, _Mapping]] = ...) -> None: ...
 
 class VerificationJob(_message.Message):
-    __slots__ = ("meta", "job_id", "baseline", "proposal_id", "source", "manifest", "compiler", "attempt", "deadline_unix_ms", "additional_test_ids", "verification_plan", "verification_inputs")
+    __slots__ = ("meta", "job_id", "baseline", "proposal_id", "source", "manifest", "compiler", "attempt", "deadline_unix_ms", "additional_test_ids", "verification_plan", "verification_inputs", "ir")
     META_FIELD_NUMBER: _ClassVar[int]
     JOB_ID_FIELD_NUMBER: _ClassVar[int]
     BASELINE_FIELD_NUMBER: _ClassVar[int]
@@ -253,6 +283,7 @@ class VerificationJob(_message.Message):
     ADDITIONAL_TEST_IDS_FIELD_NUMBER: _ClassVar[int]
     VERIFICATION_PLAN_FIELD_NUMBER: _ClassVar[int]
     VERIFICATION_INPUTS_FIELD_NUMBER: _ClassVar[int]
+    IR_FIELD_NUMBER: _ClassVar[int]
     meta: Metadata
     job_id: str
     baseline: bool
@@ -265,7 +296,8 @@ class VerificationJob(_message.Message):
     additional_test_ids: _containers.RepeatedScalarFieldContainer[str]
     verification_plan: ArtifactRef
     verification_inputs: ArtifactRef
-    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., job_id: _Optional[str] = ..., baseline: bool = ..., proposal_id: _Optional[str] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., attempt: _Optional[int] = ..., deadline_unix_ms: _Optional[int] = ..., additional_test_ids: _Optional[_Iterable[str]] = ..., verification_plan: _Optional[_Union[ArtifactRef, _Mapping]] = ..., verification_inputs: _Optional[_Union[ArtifactRef, _Mapping]] = ...) -> None: ...
+    ir: IRPassProposal
+    def __init__(self, meta: _Optional[_Union[Metadata, _Mapping]] = ..., job_id: _Optional[str] = ..., baseline: bool = ..., proposal_id: _Optional[str] = ..., source: _Optional[_Union[SourceVersion, _Mapping]] = ..., manifest: _Optional[_Union[SubmissionManifest, _Mapping]] = ..., compiler: _Optional[_Union[CompilerSettings, _Mapping]] = ..., attempt: _Optional[int] = ..., deadline_unix_ms: _Optional[int] = ..., additional_test_ids: _Optional[_Iterable[str]] = ..., verification_plan: _Optional[_Union[ArtifactRef, _Mapping]] = ..., verification_inputs: _Optional[_Union[ArtifactRef, _Mapping]] = ..., ir: _Optional[_Union[IRPassProposal, _Mapping]] = ...) -> None: ...
 
 class WorkerHeartbeat(_message.Message):
     __slots__ = ("meta", "worker_id", "incarnation_id", "sequence", "state", "current_job_id", "targets")

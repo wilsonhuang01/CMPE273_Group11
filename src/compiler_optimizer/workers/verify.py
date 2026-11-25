@@ -124,21 +124,34 @@ def run_verification(
     ]
     require(len(proposals) == 1, "proposal is not stored under this task")
     proposal = proposals[0]
-    sources = unbundle(repository.artifacts.get(proposal.source.bundle))
-    require(
-        not set(sources) & (set(original.files) - set(original.sources)),
-        "candidate bundle cannot overwrite fixtures or metadata",
-    )
-    require(
-        set(original.manifest.sources) <= sources.keys()
-        and all(
-            name in original.manifest.sources or name.endswith((".h", ".hpp")) for name in sources
-        ),
-        "invalid candidate source-only bundle",
-    )
-    merged = {name: data for name, data in original.files.items() if name not in original.sources}
-    merged.update(sources)
-    candidate = package_from_files(merged)
+    if proposal.HasField("ir"):
+        from compiler_optimizer.workers.llvm_ir import validate_artifacts
+
+        validate_artifacts(repository.artifacts, proposal)
+        require(
+            {"normal", plan.sanitizer} <= {v.build_profile for v in proposal.ir.variants},
+            "LLVM proposal lacks requested sanitizer variant",
+        )
+        candidate = original
+    else:
+        sources = unbundle(repository.artifacts.get(proposal.source.bundle))
+        require(
+            not set(sources) & (set(original.files) - set(original.sources)),
+            "candidate bundle cannot overwrite fixtures or metadata",
+        )
+        require(
+            set(original.manifest.sources) <= sources.keys()
+            and all(
+                name in original.manifest.sources or name.endswith((".h", ".hpp"))
+                for name in sources
+            ),
+            "invalid candidate source-only bundle",
+        )
+        merged = {
+            name: data for name, data in original.files.items() if name not in original.sources
+        }
+        merged.update(sources)
+        candidate = package_from_files(merged)
     cases = generate_cases(original, plan)
     inputs_data = json.dumps(
         {"schema_version": 1, "cases": [case.record() for case in cases]}, sort_keys=True
@@ -161,6 +174,8 @@ def run_verification(
         verification_plan=repository.artifacts.put(plan_data),
         verification_inputs=repository.artifacts.put(inputs_data),
     )
+    if proposal.HasField("ir"):
+        job.ir.CopyFrom(proposal.ir)
     repository.save_job(job)
     result = pb.VerificationResult(
         meta=metadata(task_id),
@@ -188,6 +203,10 @@ def run_verification(
         "baseline_invalid": False,
         "checks": [],
     }
+    if proposal.HasField("ir"):
+        from compiler_optimizer.workers.llvm_ir import descriptor
+
+        report["ir"] = json.loads(descriptor(proposal.ir))
     logs = {"schema_version": 1, "invocations": []}
     if job.compiler.target == "linux-riscv64":
         report["execution"] = {
@@ -243,7 +262,18 @@ def run_verification(
         raise Rejected(details, baseline=baseline_role)
 
     def compile_program(package, phase, profile, *, baseline_role=False):
-        invocation = runner.compile(package, build_profile=profile)
+        if proposal.HasField("ir"):
+            variant = next(v for v in proposal.ir.variants if v.build_profile == profile)
+            bitcode = variant.baseline_bitcode if baseline_role else variant.optimized_bitcode
+            invocation = runner.llvm_stage(
+                package,
+                "lower",
+                pipeline_id=proposal.ir.pipeline_id,
+                modules=[repository.artifacts.get(bitcode)],
+                build_profile=profile,
+            )
+        else:
+            invocation = runner.compile(package, build_profile=profile)
         check(invocation, phase, baseline_role=baseline_role)
         if not invocation.binary:
             raise InfrastructureError("compiler did not produce verification executable")
@@ -255,7 +285,10 @@ def run_verification(
             job_id=job.job_id,
             attempt=attempt,
         )
-        report["checks"].append({"phase": phase, "binary_sha256": reference.sha256})
+        build = {"phase": phase, "binary_sha256": reference.sha256}
+        if proposal.HasField("ir"):
+            build.update(ir_bitcode_sha256=bitcode.sha256, ir_build_profile=profile)
+        report["checks"].append(build)
         return invocation.binary
 
     def execute_program(binary, package, case, phase, profile, *, baseline_role=False):

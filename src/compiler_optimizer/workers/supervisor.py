@@ -156,8 +156,130 @@ def execute(
     }
 
 
+def llvm_main(request):
+    if __package__:
+        from .llvm_policy import PIPELINES, STAGES, TRIPLES
+    else:
+        from llvm_policy import PIPELINES, STAGES, TRIPLES
+    stage, target, profile = request["stage"], request["target"], request["build_profile"]
+    if stage not in STAGES or target not in TRIPLES or profile not in BUILD_PROFILES:
+        raise ValueError("unsupported LLVM stage/target/profile")
+    pipeline = request["pipeline_id"]
+    if pipeline not in PIPELINES:
+        raise ValueError("unsupported LLVM pipeline")
+    language = request["language"]
+    if language not in ("c17", "cpp17"):
+        raise ValueError("unsupported LLVM language")
+    compiler = "/usr/bin/clang-18" if language == "c17" else "/usr/bin/clang++-18"
+    tool = (
+        compiler
+        if stage in ("emit", "lower")
+        else "/usr/bin/llvm-link-18"
+        if stage == "link"
+        else "/usr/bin/opt-18"
+    )
+    identity = subprocess.run(
+        [tool, "--version"], capture_output=True, timeout=5, check=True
+    ).stdout.decode()
+    if request["llvm_version"] not in identity.split():
+        raise ValueError("LLVM tool version differs from pinned Clang")
+    output = "/work/build/program"
+    inputs = []
+    for i, encoded in enumerate(request.get("modules", [])):
+        data = base64.b64decode(encoded, validate=True)
+        if not data or len(data) > MAX_BINARY_BYTES or len(inputs) >= 100:
+            raise ValueError("invalid LLVM module size/count")
+        path = Path(f"/work/src/module-{i}.bc")
+        path.write_bytes(data)
+        path.chmod(0o444)
+        inputs.append(str(path))
+    if sum(Path(path).stat().st_size for path in inputs) > 64 * 1024**2:
+        raise ValueError("LLVM inputs exceed aggregate limit")
+    flags = [*compiler_flags(target, language), *BUILD_PROFILES[profile]]
+    if stage == "emit":
+        for name, encoded in request["files"].items():
+            if (
+                name.startswith("/")
+                or "\\" in name
+                or any(p in ("", ".", "..") for p in name.split("/"))
+            ):
+                raise ValueError("unsafe LLVM source path")
+            path = Path("/work/src") / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(base64.b64decode(encoded, validate=True))
+            path.chmod(0o444)
+        source = request["source"]
+        if source not in request["files"]:
+            raise ValueError("missing LLVM translation unit")
+        argv = [
+            tool,
+            *flags,
+            "-target",
+            TRIPLES[target],
+            "-Xclang",
+            "-disable-llvm-passes",
+            "-emit-llvm",
+            "-c",
+            "-I",
+            "/work/src",
+            "/work/src/" + source,
+            "-o",
+            output,
+        ]
+    elif stage == "link":
+        if not inputs:
+            raise ValueError("LLVM link needs modules")
+        argv = [tool, *inputs, "-o", output]
+    else:
+        if len(inputs) != 1:
+            raise ValueError("LLVM stage requires exactly one module")
+        if stage == "verify":
+            argv = [tool, "-passes=verify", *inputs, "-o", output]
+        elif stage == "optimize":
+            argv = [tool, "-verify-each", "-passes=" + PIPELINES[pipeline], *inputs, "-o", output]
+        else:
+            argv = [
+                tool,
+                *flags,
+                "-target",
+                TRIPLES[target],
+                "-x",
+                "ir",
+                *inputs,
+                "-lm",
+                "-o",
+                output,
+            ]
+    report = execute(
+        argv,
+        b"",
+        request["wall_seconds"],
+        request["output_bytes"],
+        compile_mode=True,
+        build_profile=profile,
+    )
+    if report["failure"] is None:
+        path = Path(output)
+        if (
+            not stat.S_ISREG(path.lstat().st_mode)
+            or not 0 < path.stat().st_size <= MAX_BINARY_BYTES
+        ):
+            raise ValueError("invalid LLVM output")
+        data = path.read_bytes()
+        if stage == "lower" and (
+            data[:4] != b"\x7fELF"
+            or len(data) < 20
+            or int.from_bytes(data[18:20], "little") != (62 if target == "linux-x86_64" else 183)
+        ):
+            raise ValueError("LLVM lowering produced the wrong native executable target")
+        report["binary"] = base64.b64encode(data).decode()
+    print(json.dumps(report))
+
+
 def main():
     request = json.load(sys.stdin)
+    if request["mode"] == "llvm":
+        return llvm_main(request)
     if request["mode"] not in ("compile", "execute"):
         raise ValueError("invalid invocation mode")
     compile_mode = request["mode"] == "compile"
