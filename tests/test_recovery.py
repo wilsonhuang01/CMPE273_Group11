@@ -126,7 +126,12 @@ def setup(tmp_path, *, cache=None, crash=False, infra=0):
     broker = RecoveryBroker(repo)
     cache = cache or MemoryRedis()
     recovery = RecoveryController(
-        repo, [Worker(runner=first), Worker(runner=second)], RedisBlacklist(cache), policy=policy()
+        repo,
+        [Worker(runner=first), Worker(runner=second)],
+        RedisBlacklist(cache),
+        # Real SQLite/fsync and thread scheduling vary on shared CI hosts.
+        # Failure injection below controls expiry; healthy work needs headroom.
+        policy=policy(lease_seconds=5, worker_health_seconds=5, attempt_timeout_seconds=30),
     )
     coordinator = CohortCoordinator(repo, first, broker, recovery=recovery)
     return repo, first, second, baseline.meta.task_id, broker, recovery, coordinator, cache
@@ -324,25 +329,41 @@ def test_backoff_is_deterministic_and_capped():
 
 
 def test_stalled_worker_is_retired_and_late_result_cannot_commit(tmp_path):
-    repo, first, _, task, _, recovery, coordinator, _ = setup(tmp_path)
-    recovery.policy = policy(attempt_timeout_seconds=0.25)
+    repo, first, second, task, _, recovery, coordinator, _ = setup(tmp_path)
+    offset_ms = [0]
+    repo.recovery_clock_ms = lambda: time.time_ns() // 1_000_000 + offset_ms[0]
     release, finished = threading.Event(), threading.Event()
     compile_first = first.compile
 
     def stall(*args, **kwargs):
+        # Expire only the stalled attempt, without imposing a 250 ms wall-clock
+        # deadline on the healthy replacement's verification and measurement.
+        offset_ms[0] += int(recovery.policy.attempt_timeout_seconds * 1000) + 1
         try:
-            assert release.wait(5)
+            assert release.wait(30)
             return compile_first(*args, **kwargs)
         finally:
             finished.set()
 
     first.compile = stall
+    compile_second = second.compile
+    slow_once = [True]
+
+    def healthy_compile(*args, **kwargs):
+        if slow_once[0]:
+            slow_once[0] = False
+            time.sleep(0.35)  # Healthy work may legitimately exceed the old 250 ms budget.
+        return compile_second(*args, **kwargs)
+
+    second.compile = healthy_compile
     try:
         audit = coordinator.run(task, agents=["performance"])
         assert audit["status"] == "selected", audit
         proposal = repo.list_proposals(task)[0]
         attempts = repo.recovery_attempts(task, proposal.proposal_id)
-        assert len(attempts) == 2 and recovery.workers[0].retired
+        assert [a["status"] for a in attempts] == ["lease_expired", "completed"]
+        assert attempts[0]["worker_id"] != attempts[1]["worker_id"]
+        assert recovery.workers[0].retired and not recovery.workers[1].retired
         before = repo.list_results(task)
         release.set()
         assert finished.wait(2)
