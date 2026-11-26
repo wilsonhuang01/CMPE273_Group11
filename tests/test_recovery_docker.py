@@ -49,6 +49,7 @@ def prepare(tmp_path, package, *, backend=None, fail_once=False):
     first, second = [
         CountingRunner(
             os.environ.get("COMPILER_IMAGE", "cmpe273-clang:18"),
+            target=os.environ.get("WORKER_TARGET", "linux-x86_64"),
             watchdog_directory=tmp_path / "watchdogs",
         )
         for _ in range(2)

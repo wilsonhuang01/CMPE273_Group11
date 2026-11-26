@@ -29,8 +29,8 @@ The development extra installs pytest, Ruff, CMake, clang-format 18, and the Pyt
 build frontend, plus the pinned protobuf/gRPC generator. Runtime dependencies
 include protobuf, gRPC, and JSON Schema validation for the shared contracts.
 Pika and the Redis client support infrastructure probes and broker topology setup.
-Dependency ranges live in `pyproject.toml`; they are not a locked deployment
-environment. To choose Clang explicitly, set `CC=clang CXX=clang++` before the first
+Dependency ranges live in `pyproject.toml`; the tested reproduction versions
+are pinned in `constraints.txt`. To choose Clang explicitly, set `CC=clang CXX=clang++` before the first
 CMake configure. Use a fresh build directory when changing compilers.
 
 CTest invokes pytest against the built example and its manifest's input/output
@@ -100,3 +100,30 @@ correctness, measurement, agent, recovery and failure-injection tests. Native
 measurement integration selects the Docker engine architecture; local ARM64
 validation uses the `native-arm` profile. The [evaluation guide](evaluation.md)
 lists the full integration-test command and the recorded local results.
+
+## Reproduce a clean source release (action O)
+
+`constraints.txt` pins the tested runtime, development and optional AWS/model
+Python dependencies. Use it for local installs:
+
+```sh
+python -m pip install -c constraints.txt -e '.[dev]'
+./project package --output /tmp/optimizer-source.tar.gz
+python tools/reproduction.py --check /tmp/optimizer-source.tar.gz
+```
+
+The last command extracts into a temporary directory, creates a fresh virtualenv,
+installs with constraints, builds the trusted C example, checks generated contracts,
+runs all non-Docker tests, builds distributions and exercises release packaging.
+It needs network access to the package index, a native C compiler and CMake build
+prerequisites. It never reads the development `.env`, build directory or virtualenv
+from the source checkout. CI runs this gate in a separate clean-release job.
+The Docker CI job separately validates startup and fault scenarios.
+
+Application Python builds use the same constraints. Python/Ubuntu base images
+and upstream Compose dependencies use digest pins. OS package repositories are
+still live: record the actual built compiler/application image IDs in run evidence
+and reuse those images for matched measurements. These source pins do not promise
+bit-identical OS rebuilds. Refresh constraints and image pins deliberately and run
+both CI suites. See [observability](observability.md) for redacted model usage and
+release provenance options. Physical multi-host failure remains AWS acceptance work.

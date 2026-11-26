@@ -153,3 +153,55 @@ Configuration follows the official [Prometheus scrape configuration](https://pro
 [Python custom collector API](https://prometheus.github.io/client_python/collector/custom/),
 [RabbitMQ Prometheus plugin](https://www.rabbitmq.com/docs/prometheus) and
 [Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/) documentation.
+
+## Action O: stages, independent agents and release evidence
+
+Agent health ports now also serve `/metrics`; the `optimizer-agents` scrape job
+collects the six agent services when their Compose profile is enabled. It may be
+absent/down when only the infrastructure profile is running. Model calls and
+reported input/output tokens come from each agent's private durable ledger, with
+provider latency histograms. Calls include retries and interrupted reservations;
+unknown token usage after a failed/interrupted call remains zero, not an estimate
+of billable usage. Model IDs, prompts, completions and provider error messages are
+excluded from metrics. Do not sum replicas exposing the same store.
+
+`optimizer_agent_operation_duration_seconds{method,state}` measures the latest
+finished attempt per deduplicated Generate/Review/Plan operation. Retrying an
+operation replaces that operation's duration; this is an evidence snapshot,
+not a cumulative attempt histogram. Old operations with no timestamps remain
+cached and do not acquire invented timings. Execution attempts have a separate
+`optimizer_execution_attempt_duration_seconds{status}` histogram, including retries.
+
+Coordinator metrics also expose `optimizer_fleet_workers{state}` (idle/busy/stale
+using fleet heartbeat freshness), primitive `optimizer_fleet_jobs{state}`,
+`optimizer_measurement_windows{state}`, started initial/revision slots through
+`optimizer_generation_rounds_total{kind}`, evaluation outcomes and final bounded
+`optimizer_candidate_rejections_total{reason}`. Repeated scrapes and replay do not
+increase durable counts. Fleet availability is worker slots, not a count of CPU
+cores; the scheduler still enforces each profile's resource budget. Repository
+and fleet summaries use read transactions; immutable reports are read afterward.
+
+The Docker debate test now interrupts delivery after the first committed round,
+reopens the repository and resumes the revision with frozen feedback and budgets.
+The existing fleet test kills an independent worker; recovery tests close an AMQP
+connection before ack and settle duplicate deliveries. Fleet unit tests reject
+stale commits and replayed heartbeats. These exercise **local process and network
+faults**, not loss of a physical host, cloud failover or GPU recovery.
+
+To produce redacted evidence without copying the agent's private prompt store:
+
+```sh
+python tools/reproduction.py --agent-state var/agent-performance \
+  --image cmpe273-arm:18 > var/action-o-provenance.json
+./project package --output dist/release.tar.gz \
+  --agent-state var/agent-performance --image cmpe273-arm:18
+```
+
+Omit `--agent-state` for runs without model calls. Repeat it for each agent store.
+The exporter opens agent SQLite read-only, preserves model/backend identity,
+prompt/response hashes, state, latency and usage, and excludes text, errors and
+credentials. `--image` resolves an existing local image to its immutable ID;
+it requires Docker. Release archives always include `provenance.json` with source
+hashes, configuration hashes, declared image references and installed package
+versions. Source revision may be absent outside Git; source hashes still identify
+packaged implementation files. No `.env` values are copied into provenance.

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from compiler_optimizer.coordinator.debate import DebateCoordinator
+from compiler_optimizer.runtime.proposal_queue import DeliveryError
 from compiler_optimizer.shared.benchmarking import BenchmarkPlan
 from compiler_optimizer.shared.debate import DebatePolicy
 from compiler_optimizer.storage import Repository
@@ -57,7 +58,8 @@ class Repair:
         ).encode()
 
 
-def test_rejected_candidate_revised_and_reverified_on_native_docker(tmp_path):
+@pytest.mark.parametrize("restart", [False, True])
+def test_rejected_candidate_revised_and_reverified_on_native_docker(tmp_path, restart):
     target = os.environ.get("WORKER_TARGET", "linux-x86_64")
     runner = DockerRunner(
         os.environ.get("COMPILER_IMAGE", DEFAULT_IMAGES[target]),
@@ -66,18 +68,40 @@ def test_rejected_candidate_revised_and_reverified_on_native_docker(tmp_path):
     )
     repo = Repository(tmp_path / "state")
     backend = Repair()
+
+    class InterruptedBroker(Broker):
+        failed = False
+
+        def exchange(self, proposal, consume, published):
+            result = super().exchange(proposal, consume, published)
+            if restart and not self.failed:
+                self.failed = True
+                raise DeliveryError("local network loss after committed first round")
+            return result
+
+    broker = InterruptedBroker()
     coordinator = DebateCoordinator(
         repo,
         runner,
-        Broker(),
+        broker,
         backends={"performance": backend},
         debate_policy=DebatePolicy(heldout_cases=({"stdin": "7\n1 2 3 4 5 6 7\n", "args": []},)),
     )
-    report = coordinator.optimize(
-        read_package(Path(__file__).parents[1] / "examples/sum-array"),
-        agents=["performance"],
-        benchmark_plan=BenchmarkPlan(warmups=0, repetitions=7),
-    )
+    try:
+        report = coordinator.optimize(
+            read_package(Path(__file__).parents[1] / "examples/sum-array"),
+            agents=["performance"],
+            benchmark_plan=BenchmarkPlan(warmups=0, repetitions=7),
+        )
+    except DeliveryError:
+        assert restart
+        task = coordinator.last_task_id
+        previous = repo.debate_run(task)["calls"]
+        repo = Repository(repo.root)
+        coordinator = DebateCoordinator(repo, runner, broker, backends={"performance": backend})
+        report = coordinator.run(task)
+        assert repo.debate_run(task)["calls"] >= previous
+        coordinator.last_task_id = task
     task = coordinator.last_task_id
     assert report["status"] in ("selected", "retained_baseline"), report
     assert len(backend.requests) == 2

@@ -10,3 +10,5 @@ recursive-include tools *.py
 recursive-include docker *.Dockerfile *.c
 recursive-include monitoring *.yml *.json enabled_plugins
 recursive-include src *.proto *.json *.pyi *.sql
+
+include constraints.txt
