@@ -255,15 +255,17 @@ class PortableRuleBackend:
         supported(request.manifest.language in {"c17", "cpp17"}, "unsupported language")
         supported(
             request.compiler.target in self.targets,
-            "rules require a controlled native CPU target"
-            if self.role == pb.ARCHITECTURE
-            else "rules require a controlled CPU target",
+            "rules require a controlled CPU target",
         )
         supported(len(sources) == 1, "rules require one translation unit and no local headers")
         supported(
             request.compiler.language == request.manifest.language
             and list(request.compiler.flags)
-            == compiler_flags(request.compiler.target, request.manifest.language),
+            == compiler_flags(
+                request.compiler.target,
+                request.manifest.language,
+                request.compiler.execution_profile,
+            ),
             "rule requires the fixed compiler language/flags",
         )
         path, original = next(iter(sources.items()))
@@ -396,7 +398,7 @@ class MemoryRuleBackend(PortableRuleBackend):
 
 class ArchitectureRuleBackend(PortableRuleBackend):
     role = pb.ARCHITECTURE
-    targets = frozenset({"linux-aarch64", "linux-x86_64"})
+    targets = frozenset({"linux-aarch64", "linux-x86_64", "linux-riscv64"})
 
     def transform(self, text, tokens, includes):
         try:
@@ -409,7 +411,7 @@ class ArchitectureRuleBackend(PortableRuleBackend):
                 "For equal input/output pointers, expose "
                 "four independent unsigned lanes with a scalar tail. Otherwise retain the "
                 "original ordered loop, including partially overlapping arrays. The compiler "
-                "chooses whether to vectorize under the unchanged native target profile.",
+                "chooses whether to vectorize under the unchanged controlled target profile.",
             )
         supported("stdio.h" in includes, "bounded reduction requires stdio.h")
         count, total, index, value = (node[k] for k in ("count", "total", "index", "value"))

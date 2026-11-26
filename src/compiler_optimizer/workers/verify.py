@@ -152,7 +152,17 @@ def run_verification(
         }
         merged.update(sources)
         candidate = package_from_files(merged)
+    if plan.coverage is not None:
+        require(
+            not proposal.HasField("ir")
+            and original.manifest.language == "cpp17"
+            and runner.native_execution
+            and runner.target != "linux-riscv64",
+            "coverage contract requires native C++17 source proposals",
+        )
     cases = generate_cases(original, plan)
+    if plan.coverage is not None:
+        require(all(case.id != "coverage-fuzz" for case in cases), "reserved coverage test ID")
     inputs_data = json.dumps(
         {"schema_version": 1, "cases": [case.record() for case in cases]}, sort_keys=True
     ).encode()
@@ -161,6 +171,8 @@ def run_verification(
     budget = 4 * (limits.compile_wall_seconds + 30) + (
         4 * len(cases) + 2 * len(original.manifest.benchmark_test_ids)
     ) * (limits.run_wall_seconds + 30)
+    if plan.coverage is not None:
+        budget += limits.compile_wall_seconds + plan.coverage.seconds + 45
     job = pb.VerificationJob(
         meta=meta,
         job_id=job_id or str(uuid4()),
@@ -363,6 +375,31 @@ def run_verification(
                         baseline_role=role == "baseline",
                     )
             report["checks"].append({"phase": "sanitizer", "test_id": case.id, "passed": True})
+        if plan.coverage is not None:
+            from compiler_optimizer.workers.fuzzing import run_fuzz
+
+            campaign, campaign_ref = run_fuzz(
+                repository, task_id, proposal_id, runner, policy=plan.coverage, _verified_job=job
+            )
+            report["coverage"] = {
+                "status": campaign["status"],
+                "report_sha256": campaign_ref.sha256,
+                "policy": campaign["policy"],
+            }
+            if campaign["status"] != "bounded-no-finding":
+                invocation = campaign["invocation"]
+                details = pb.FailureDetails(
+                    reason=REASONS[invocation["failure"]],
+                    stage=pb.TEST,
+                    test_id="coverage-fuzz",
+                    message="coverage-guided harness rejected candidate; report "
+                    + campaign_ref.sha256,
+                )
+                if invocation["returncode"] < 0:
+                    details.signal_number = -invocation["returncode"]
+                elif invocation["returncode"] > 0:
+                    details.exit_code = invocation["returncode"]
+                raise Rejected(details)
         report["correctness_passed"] = True
         success = pb.VerificationSuccess(passed_test_ids=[case.id for case in cases])
         # Step 6's single-sample measurements remain provisional until step 9.
@@ -424,6 +461,7 @@ def main():
     parser.add_argument("--state", default="var")
     parser.add_argument("--image")
     parser.add_argument("--target", choices=tuple(DEFAULT_IMAGES), default="linux-x86_64")
+    parser.add_argument("--execution-profile", choices=("", "parallel-2"), default="")
     args = parser.parse_args()
     try:
         plan = (
@@ -435,6 +473,7 @@ def main():
         runner = DockerRunner(
             args.image or DEFAULT_IMAGES[args.target],
             target=args.target,
+            execution_profile=args.execution_profile,
             watchdog_directory=Path(args.state) / "watchdogs",
         )
         task, original, _ = _snapshot(repository, args.task_id)

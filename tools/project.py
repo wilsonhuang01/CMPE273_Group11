@@ -82,6 +82,7 @@ def package(destination, evidence):
         "src",
         "docker",
         "docs",
+        "infra",
         "backlog",
         "examples",
         "benchmarks",
@@ -94,6 +95,9 @@ def package(destination, evidence):
     def safe(info):
         if any(
             part in ("__pycache__", ".pytest_cache", ".ruff_cache", ".git", ".aws", ".venv")
+            or part in (".terraform", "backend.json")
+            or part.endswith((".tfstate", ".tfplan", "local.tfvars.json"))
+            or ".tfstate." in part
             or (part.startswith(".env") and part != ".env.example")
             or part.endswith(".egg-info")
             for part in Path(info.name).parts
@@ -139,6 +143,15 @@ def package(destination, evidence):
 
 
 def main():
+    if sys.argv[1:2] == ["infra"]:  # AWS environments (action Q); see docs/aws-infrastructure.md
+        env = environment()
+        try:
+            import boto3  # noqa: F401
+        except ImportError:
+            command([sys.executable, "-m", "pip", "install", "-e", ".[aws]"], env)
+        os.execvpe(
+            sys.executable, [sys.executable, str(ROOT / "tools/infra.py"), *sys.argv[2:]], env
+        )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",

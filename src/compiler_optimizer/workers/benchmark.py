@@ -104,7 +104,11 @@ def _run_benchmark(repository, task_id, job_id, runner, plan=None, *, attempt=1)
                     outputs = {}
                     for role in pair["order"]:
                         invocation = runner.execute(
-                            binaries[role], case, original, cpu_id=before["cpu_id"]
+                            binaries[role],
+                            case,
+                            original,
+                            cpu_id=before["cpu_id"],
+                            **({"cpu_ids": before["cpu_ids"]} if "cpu_ids" in before else {}),
                         )
                         sandbox = invocation.sandbox or {}
                         removed = sandbox.get("watchdog", {}).get("state") == "removed"
@@ -125,6 +129,14 @@ def _run_benchmark(repository, task_id, job_id, runner, plan=None, *, attempt=1)
                             "stdout_sha256": hashlib.sha256(invocation.stdout).hexdigest(),
                             "stderr_sha256": hashlib.sha256(invocation.stderr).hexdigest(),
                         }
+                        if "execution_profile" in before:
+                            sample.update(
+                                execution_profile=sandbox.get("execution_profile"),
+                                cpu_ids=sandbox.get("cpu_ids"),
+                                cpu_quota=sandbox.get("cpu_quota"),
+                                threads=sandbox.get("threads"),
+                                cpu_seconds=invocation.cpu_seconds,
+                            )
                         pair["samples"][role] = sample
                         if invocation.failure or invocation.returncode:
                             raw["failure_invocation"] = invocation.log()
@@ -183,11 +195,20 @@ def main():
     parser.add_argument("--state", default="var")
     parser.add_argument("--plan")
     parser.add_argument("--image", default="cmpe273-clang:18")
+    parser.add_argument(
+        "--target", default="linux-x86_64", choices=("linux-x86_64", "linux-aarch64")
+    )
+    parser.add_argument("--execution-profile", choices=("", "parallel-2"), default="")
     args = parser.parse_args()
     try:
         plan = BenchmarkPlan.parse(Path(args.plan).read_bytes()) if args.plan else BenchmarkPlan()
         repository = Repository(args.state)
-        runner = DockerRunner(args.image, watchdog_directory=Path(args.state) / "watchdogs")
+        runner = DockerRunner(
+            args.image,
+            target=args.target,
+            execution_profile=args.execution_profile,
+            watchdog_directory=Path(args.state) / "watchdogs",
+        )
         from compiler_optimizer.workers.execution import execute_benchmark
 
         report = execute_benchmark(

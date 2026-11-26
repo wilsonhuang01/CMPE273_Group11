@@ -8,6 +8,8 @@ import re
 from dataclasses import asdict, dataclass
 
 from compiler_optimizer.shared.manifest import ContractError, require
+from compiler_optimizer.workers.domains import DomainGenerator
+from compiler_optimizer.workers.fuzz_policy import FuzzPolicy
 
 
 def _object(pairs):
@@ -47,7 +49,9 @@ class VerificationPlan:
     absolute_tolerance: float = 0.0
     relative_tolerance: float = 0.0
     sanitizer: str = "undefined"
-    generator: ArrayGenerator | None = None
+    generator: ArrayGenerator | DomainGenerator | None = None
+
+    coverage: FuzzPolicy | None = None
 
     @classmethod
     def parse(cls, data):
@@ -57,7 +61,20 @@ class VerificationPlan:
                 data = json.loads(data, object_pairs_hook=_object)
             except (ValueError, UnicodeError, RecursionError) as error:
                 raise ContractError("invalid verification plan JSON") from error
-        _fields(data, {"schema_version", "comparison", "sanitizer", "generator"})
+        require(isinstance(data, dict), "verification plan must be an object")
+        coverage = data.get("coverage")
+        if "coverage" in data:
+            require(
+                isinstance(coverage, dict) and set(coverage) == set(asdict(FuzzPolicy())),
+                "invalid coverage policy",
+            )
+            coverage = FuzzPolicy(**coverage)
+            coverage.validate()
+        _fields(
+            data,
+            {"schema_version", "comparison", "sanitizer", "generator"}
+            | ({"coverage"} if coverage is not None else set()),
+        )
         _integer(data["schema_version"], 1, 1)
         require(data["sanitizer"] in ("undefined", "address-undefined"), "unsupported sanitizer")
         compare = data["comparison"]
@@ -77,7 +94,10 @@ class VerificationPlan:
             )
         require(relative <= 1, "relative tolerance cannot exceed 1")
         generator = data["generator"]
-        if generator is not None:
+        require(generator is None or isinstance(generator, dict), "invalid generator")
+        if generator is not None and generator.get("kind") != "integer_array":
+            generator = DomainGenerator.parse(generator)
+        elif generator is not None:
             _fields(
                 generator,
                 {
@@ -128,7 +148,7 @@ class VerificationPlan:
                 **{key: value for key, value in generator.items() if key not in ("kind", "args")},
                 args=tuple(args),
             )
-        return cls(mode, float(absolute), float(relative), data["sanitizer"], generator)
+        return cls(mode, float(absolute), float(relative), data["sanitizer"], generator, coverage)
 
     def as_dict(self):
         comparison = {"mode": self.comparison}
@@ -138,11 +158,14 @@ class VerificationPlan:
                 relative_tolerance=self.relative_tolerance,
             )
         return {
+            **({"coverage": asdict(self.coverage)} if self.coverage is not None else {}),
             "schema_version": 1,
             "comparison": comparison,
             "sanitizer": self.sanitizer,
             "generator": None
             if self.generator is None
+            else asdict(self.generator)
+            if isinstance(self.generator, DomainGenerator)
             else {
                 "kind": "integer_array",
                 **asdict(self.generator),
@@ -206,6 +229,11 @@ def generate_cases(package, plan):
     ]
     domain = plan.generator
     if domain is None:
+        return cases
+    if isinstance(domain, DomainGenerator):
+        for i, (stdin, expected) in enumerate(domain.generate()):
+            cases.append(InputCase(f"oracle-{domain.kind}-{i:04d}", stdin, (), expected, "oracle"))
+        require(len({c.id for c in cases}) == len(cases), "generated IDs collide")
         return cases
     rng = random.Random(domain.seed)
     corpus = []

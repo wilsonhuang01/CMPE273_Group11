@@ -140,20 +140,22 @@ class SubmissionManifest(_message.Message):
     def __init__(self, schema_version: _Optional[int] = ..., name: _Optional[str] = ..., language: _Optional[str] = ..., sources: _Optional[_Iterable[str]] = ..., tests: _Optional[_Iterable[_Union[TestCase, _Mapping]]] = ..., benchmark_test_ids: _Optional[_Iterable[str]] = ..., limits: _Optional[_Union[ResourceLimits, _Mapping]] = ...) -> None: ...
 
 class CompilerSettings(_message.Message):
-    __slots__ = ("executable", "version", "image_digest", "language", "target", "flags")
+    __slots__ = ("executable", "version", "image_digest", "language", "target", "flags", "execution_profile")
     EXECUTABLE_FIELD_NUMBER: _ClassVar[int]
     VERSION_FIELD_NUMBER: _ClassVar[int]
     IMAGE_DIGEST_FIELD_NUMBER: _ClassVar[int]
     LANGUAGE_FIELD_NUMBER: _ClassVar[int]
     TARGET_FIELD_NUMBER: _ClassVar[int]
     FLAGS_FIELD_NUMBER: _ClassVar[int]
+    EXECUTION_PROFILE_FIELD_NUMBER: _ClassVar[int]
     executable: str
     version: str
     image_digest: str
     language: str
     target: str
     flags: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, executable: _Optional[str] = ..., version: _Optional[str] = ..., image_digest: _Optional[str] = ..., language: _Optional[str] = ..., target: _Optional[str] = ..., flags: _Optional[_Iterable[str]] = ...) -> None: ...
+    execution_profile: str
+    def __init__(self, executable: _Optional[str] = ..., version: _Optional[str] = ..., image_digest: _Optional[str] = ..., language: _Optional[str] = ..., target: _Optional[str] = ..., flags: _Optional[_Iterable[str]] = ..., execution_profile: _Optional[str] = ...) -> None: ...
 
 class SourceVersion(_message.Message):
     __slots__ = ("version", "bundle", "parent_source_sha256")

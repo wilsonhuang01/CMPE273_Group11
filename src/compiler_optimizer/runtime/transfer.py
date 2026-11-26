@@ -64,6 +64,12 @@ class ArtifactTransferService(rpc.ArtifactTransferServiceServicer):
 
     @staticmethod
     def _compiler(target, language):
+        if language == "cuda17":
+            from compiler_optimizer.workers.cuda_compile import CUDA_TARGET, CUDACompileRunner
+
+            require(target in ("", CUDA_TARGET), "CUDA requires the compile-only target")
+            return CUDACompileRunner().compiler(language)
+        require(target != "cuda-ptx", "PTX requires CUDA source")
         target = target or native_target()
         return DockerRunner(DEFAULT_IMAGES[target], target=target).compiler(language)
 

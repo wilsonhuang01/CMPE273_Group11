@@ -128,10 +128,11 @@ supplied fixtures seed the corpus. Every generated input is saved as exact bytes
 so replay does not depend solely on a particular Python PRNG version. Candidate
 outputs use the fresh original program as their oracle.
 
-Other program formats can use their supplied tests until another trusted generator
-is implemented. This is structured mutation fuzzing, not coverage-guided libFuzzer
-or arbitrary-byte fuzzing. The maximum total case count is 132 including the
-original 100 supplied tests. Generated IDs cannot collide with supplied IDs.
+This integer-array generator uses structured mutations rather than coverage feedback.
+The separate, opt-in sort-library libFuzzer adapter and additional independent domain
+oracles are described in [correctness-fuzzing.md](correctness-fuzzing.md). The
+maximum total case count is 132 including the original 100 supplied tests.
+Generated IDs cannot collide with supplied IDs.
 
 ## Sanitizer profiles and isolation
 

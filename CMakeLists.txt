@@ -30,3 +30,16 @@ if(BUILD_TESTING)
     )
     set_tests_properties(example.sum-array PROPERTIES TIMEOUT 30)
 endif()
+
+# Optional, repository-owned fixture only. Submission builds use the worker adapter.
+option(BUILD_KERNEL_BENCHMARKS "Build trusted Google Benchmark/OpenMP fixture" OFF)
+if(BUILD_KERNEL_BENCHMARKS)
+    find_package(benchmark 1.8 CONFIG REQUIRED)
+    find_package(OpenMP REQUIRED)
+    add_executable(kernel_sum_benchmark
+        examples/parallel-sum/main.cpp
+        examples/benchmarks/sum_benchmark.cpp
+    )
+    target_compile_definitions(kernel_sum_benchmark PRIVATE CO_BENCHMARK=1 CO_THREADS=2)
+    target_link_libraries(kernel_sum_benchmark PRIVATE benchmark::benchmark OpenMP::OpenMP_CXX)
+endif()

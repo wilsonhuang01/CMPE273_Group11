@@ -72,7 +72,7 @@ def parse_manifest(data: str | bytes | dict) -> pb.SubmissionManifest:
             f"invalid manifest at {list(error.absolute_path)}: {error.message}"
         ) from error
 
-    extension = ".c" if data["language"] == "c17" else ".cpp"
+    extension = {"c17": ".c", "cpp17": ".cpp", "cuda17": ".cu"}[data["language"]]
     for source in data["sources"]:
         validate_path(source)
         require(source.endswith(extension), f"source must end in {extension}")

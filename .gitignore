@@ -14,3 +14,11 @@ htmlcov/
 !.env.example
 CMakeUserPresets.json
 /var/
+
+# Terraform: providers, state, saved plans and per-person settings (action Q).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+infra/aws/config/*local.tfvars.json
+infra/aws/config/backend.json

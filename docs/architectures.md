@@ -104,6 +104,11 @@ No cross-target UBSan runtime is needed. Reports explicitly identify `qemu-user`
 and trapping instrumentation. AddressSanitizer is rejected for this profile;
 there is no silent downgrade to uninstrumented verification.
 
+Performance, Memory and Architecture agents accept the fixed RV64GC profile,
+including over the agent RPC service. C17/C++17 submissions use the ordinary upload,
+broker dispatch, recovery and reviewer paths; audit reports retain the emulator
+identity and the `emulated_target_correctness_only` exclusion reason.
+
 This is **functional validation, not native RISC-V benchmarking**. After successful
 verification and reviews, cohort assessment completes with exclusion reason
 `emulated_target_correctness_only`, no benchmark batch and no candidate selection.
@@ -167,6 +172,38 @@ rejected. The runner refuses program execution and CPU optimization assignments;
 these artifacts cannot enter coordinator selection as verified proposals. This
 path does not link/run CUDA host applications or time GPU kernels.
 
+Action N also exposes this compiler through the common submitted-task API:
+
+```sh
+./project serve
+# In another terminal:
+./project client submit examples/cuda --target cuda-ptx \
+  --request-file var/cuda-request.json --wait
+./project client download TASK_ID --output var/cuda-result
+```
+
+Use the local execution backend with the CUDA image installed. Remote CPU fleet
+workers do not advertise the PTX compiler; remote-backend CUDA submissions are
+rejected. A `cuda17` manifest has exactly one `.cu` source (1 byte–1 MiB), no
+submission headers, and empty `tests` and `benchmark_test_ids`. CPU manifests still
+require tests and benchmarks. The submitted compile wall/memory limits are enforced,
+up to 60 seconds and 2 GiB; diagnostics are capped at the smaller of the submitted
+output budget and 64 KiB. Run limits remain structurally required but are unused.
+
+The host pins NVCC/image/flags at intake, compiles the baseline, and asks each frozen
+generating role for a source proposal. The built-in CPU rules abstain on CUDA;
+configure the RPC agents with a model backend to produce CUDA patches. A source
+patch preserves the common `SourceVersion` parent hash/version contract and is
+compiled under the same profile. Exact source, PTX, diagnostics, patch and report
+artifacts appear in the task-scoped catalog and verified client download.
+
+`GetOptimizationResult` returns a `cuda-ptx-task` audit. Completed means compilation
+finished, never correctness or performance approval; rejected baseline compilation
+fails the task with diagnostics. Individual rejected candidates remain in the audit.
+No `selected_source`, CPU verification result or performance decision is created.
+Each compile report is immutable and reused on restart; interrupted, uncommitted
+compilation can retry within the frozen submission attempt cap.
+
 `shared.gpu_recovery.assess_gpu_recovery` supplies hardware-independent admission
 decisions, tested with injected observations:
 
@@ -177,9 +214,18 @@ decisions, tested with injected observations:
 - Only a trusted post-recovery diagnostic plus known-good smoke-test observation
   permits readmission.
 
-This is a **pure policy contract**, not a device registry, hardware health check,
-GPU worker implementation or reset/reboot service. Calling it cannot enable CUDA
-execution in this application. No host recovery command is executed on this Mac.
+`SimulatedGPURegistry` extends this policy with an in-memory device/host registry,
+exclusive expiring leases, monotonic fences and stale-result checks. New devices
+start quarantined. Lease expiry drains the host, invalidates sibling leases and
+requires fresh simulated diagnostic and smoke checks for every device before host
+readmission. Releasing a lease still requires health checks before reuse.
+
+Every simulator report has `simulation: true`, `hardware_validated: false` and
+`actual_device_recovery: false`; admission is called `can_schedule_simulated`.
+This adapter does not persist fences, probe hardware or perform reset/reboot. A
+future trusted GPU supervisor must supply durable state and actual observations.
+Calling the simulator cannot enable CUDA execution. No host recovery command is
+executed on this Mac.
 
 A future GPU milestone still needs:
 

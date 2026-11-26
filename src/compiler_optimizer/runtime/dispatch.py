@@ -69,6 +69,18 @@ class SubmissionDispatcher:
         )
 
     def _runner(self, submission):
+        if submission.manifest.language == "cuda17":
+            from compiler_optimizer.workers.cuda_compile import CUDACompileRunner
+
+            require(
+                self.settings.execution_backend == "local",
+                "CUDA compile jobs require a local executor",
+            )
+            runner = CUDACompileRunner(watchdog_directory=self.watchdogs(submission.meta.task_id))
+            require(
+                runner.compiler("cuda17") == submission.compiler, "CUDA compiler profile changed"
+            )
+            return runner
         if self.settings.execution_backend == "remote":
             rows = matching_workers(self.repository, submission.compiler)
             if not rows:
@@ -156,6 +168,21 @@ class SubmissionDispatcher:
         submission = repo.get_task(task_id)["submission"]
         package = package_from_files(unbundle(repo.artifacts.get(submission.package)))
         runner = self.runner_factory(submission)
+        if submission.manifest.language == "cuda17":
+            from compiler_optimizer.coordinator.cuda import run_compile_task
+
+            repo.checkpoint_execution(task_id, "compiling")
+            run_compile_task(
+                repo,
+                submission,
+                runner,
+                configured_client(
+                    repo, replace(self.settings, agent_backend=config.get("agent_backend", "local"))
+                ),
+                config["agents"],
+            )
+            repo.finish_execution(task_id)
+            return
         repo.checkpoint_execution(task_id, "baseline")
         baseline = run_baseline(package, repo, runner, task_id=task_id)
         if baseline.WhichOneof("outcome") != "success":

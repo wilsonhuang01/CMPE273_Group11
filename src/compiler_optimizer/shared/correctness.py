@@ -39,6 +39,18 @@ def validate_evidence(report, result, job, submission, plan):
     else:
         require("ir" not in report, "unexpected LLVM correctness evidence")
     successful = result.WhichOneof("outcome") == "success"
+    if (
+        not successful
+        and result.failure.test_id == "coverage-fuzz"
+        and result.failure.test_id not in {case.id for case in job.manifest.tests}
+        and result.failure.test_id not in job.additional_test_ids
+    ):
+        require(
+            "coverage" in plan
+            and report.get("coverage", {}).get("status") == "rejected"
+            and report["coverage"].get("policy") == plan["coverage"],
+            "coverage failure requires matching campaign evidence",
+        )
     if job.compiler.target == "linux-riscv64":
         require(
             report.get("execution")
@@ -63,6 +75,15 @@ def validate_evidence(report, result, job, submission, plan):
             report.get("status") == "verified" and not report["baseline_invalid"],
             "successful verification requires a valid reference",
         )
+        if "coverage" in plan:
+            coverage = report.get("coverage", {})
+            require(
+                coverage.get("status") == "bounded-no-finding"
+                and coverage.get("policy") == plan["coverage"]
+                and isinstance(coverage.get("report_sha256"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", coverage["report_sha256"]) is not None,
+                "missing coverage campaign evidence",
+            )
         ids = {case.id for case in job.manifest.tests} | set(job.additional_test_ids)
         for phase in ("differential", "sanitizer"):
             rows = [check for check in checks if check.get("phase") == phase]

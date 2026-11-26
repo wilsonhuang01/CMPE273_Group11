@@ -18,7 +18,7 @@ from compiler_optimizer.storage import Repository
 from compiler_optimizer.workers.baseline import run_baseline
 from compiler_optimizer.workers.docker_runner import DockerRunner, InfrastructureError, Invocation
 from compiler_optimizer.workers.package import read_package
-from compiler_optimizer.workers.policy import POLICY_DIGEST, POLICY_VERSION
+from compiler_optimizer.workers.policy import FUZZ_POLICY_DIGEST, POLICY_DIGEST, POLICY_VERSION
 
 
 def mock_guard(monkeypatch, runner, command, directory):
@@ -35,7 +35,7 @@ def mock_guard(monkeypatch, runner, command, directory):
     guard = Guard()
     guard.directory = directory
     monkeypatch.setattr(runner, "_new_watchdog", lambda *args: guard)
-    monkeypatch.setattr(runner, "_validate_container", lambda *args: None)
+    monkeypatch.setattr(runner, "_validate_container", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         runner,
         "_attach",
@@ -205,7 +205,11 @@ def test_infrastructure_failure_is_persisted_distinctly(submission_dir, tmp_path
     assert repo.list_results(result.meta.task_id) == [result]
 
 
-def test_docker_adapter_bounds_resources_and_cleans_up(monkeypatch, tmp_path):
+@pytest.mark.parametrize("fuzz_mode", [False, True])
+@pytest.mark.parametrize("matching_policy", [False, True])
+def test_docker_adapter_bounds_resources_and_cleans_up(
+    monkeypatch, tmp_path, fuzz_mode, matching_policy
+):
     calls = []
     runner = object.__new__(DockerRunner)
     runner.hardware = json.dumps({"docker_engine": {"cpus": 4, "memory_bytes": 4 * 1024**3}})
@@ -213,6 +217,8 @@ def test_docker_adapter_bounds_resources_and_cleans_up(monkeypatch, tmp_path):
     runner.image = "sha256:" + "a" * 64
     runner.target, runner.platform = "linux-x86_64", "linux/amd64"
     runner.measurement_version = 1
+    expected_digest = FUZZ_POLICY_DIGEST if fuzz_mode else POLICY_DIGEST
+    other_digest = POLICY_DIGEST if fuzz_mode else FUZZ_POLICY_DIGEST
 
     def command(args, **kwargs):
         calls.append((args, kwargs))
@@ -224,19 +230,27 @@ def test_docker_adapter_bounds_resources_and_cleans_up(monkeypatch, tmp_path):
             "returncode": 0,
             "failure": None,
             "policy_version": POLICY_VERSION,
-            "policy_digest": POLICY_DIGEST,
+            "policy_digest": expected_digest if matching_policy else other_digest,
         }
         return subprocess.CompletedProcess(args, 0, json.dumps(report).encode(), b"")
 
     monkeypatch.setattr(runner, "_command", command)
     mock_guard(monkeypatch, runner, command, tmp_path)
-    runner._invoke({"wall_seconds": 2, "output_bytes": 1024}, memory=256, compile_mode=False)
+    payload = {"wall_seconds": 2, "output_bytes": 1024}
+    if fuzz_mode:
+        payload["mode"] = "fuzz"
+    if matching_policy:
+        invocation = runner._invoke(payload, memory=256, compile_mode=False)
+        assert invocation.sandbox["policy_digest"] == expected_digest
+    else:
+        with pytest.raises(InfrastructureError, match="syscall policy"):
+            runner._invoke(payload, memory=256, compile_mode=False)
     create = calls[0][0]
     assert create[create.index("--network") + 1] == "none"
     assert "--read-only" in create and "--security-opt" in create
     assert create[create.index("--memory") + 1] == "256m"
     assert create[create.index("--memory-swap") + 1] == "256m"
-    assert create[create.index("--pids-limit") + 1] == "2"
+    assert create[create.index("--pids-limit") + 1] == ("8" if fuzz_mode else "2")
     assert "--volume" not in create and "--mount" not in create
     assert not any(arg.startswith(("/work/src:", "/work/build:")) for arg in create)
     assert any(arg.startswith("/work/run:rw,exec,") for arg in create)

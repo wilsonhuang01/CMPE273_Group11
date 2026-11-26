@@ -216,6 +216,20 @@ class ModelPatchBackend(_StructuredCaller):
             goal=GENERATION_GOALS[self.role].format(target=request.compiler.target),
             untrusted=UNTRUSTED,
         )
+        if request.manifest.language == "cuda17":
+            system += (
+                "\nThis assignment is CUDA C++17 device source, compiled to PTX only. "
+                "Preserve kernel signatures and behavior, indexing and synchronization. "
+                "No GPU execution, correctness verification or timing is available. "
+                "Treat proposed gains as unvalidated hypotheses. Do not claim CPU tests or "
+                "sanitizers will validate CUDA. Use schema 1 source edits without a CPU "
+                "transformation contract. Decline if a safe change cannot be justified."
+            )
+        elif request.compiler.target == "linux-riscv64":
+            system += (
+                "\nRISC-V runs under QEMU for correctness only. No emulated measurement "
+                "can qualify a performance gain. Use portable source for RV64GC."
+            )
         compiler = request.compiler
         prompt = "\n".join(
             [

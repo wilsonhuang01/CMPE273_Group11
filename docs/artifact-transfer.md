@@ -23,6 +23,11 @@ profile. Clients cannot supply compiler commands or flags. RISC-V remains
 correctness-only. Existing starter-agent limitations and selection gates apply.
 
 The client prints the task ID before sending and the receipt/final status as JSON.
+For local CUDA compilation, submit `examples/cuda --target cuda-ptx`. Its `cuda17`
+manifest has one `.cu` source and no tests or benchmark IDs. Status/download expose
+PTX and compiler diagnostics with no selected source or performance decision. See
+[the compile-only task contract](architectures.md#cuda-scope-and-recovery-contract).
+
 The request file stores the package hash, target and stable metadata before the
 network call. If a receipt is lost or the coordinator restarts, repeat the same
 command with the same package, target and request file. It reuses the accepted

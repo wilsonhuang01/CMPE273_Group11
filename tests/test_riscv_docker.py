@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import pytest
+from test_agent_rpc import agents as agents
 
 from compiler_optimizer.coordinator.round import CohortCoordinator
 from compiler_optimizer.runtime.config import Settings
@@ -169,3 +170,63 @@ def test_real_riscv_cohort_uses_recovery_reviews_and_retains_baseline(
     assert attempts[0]["worker_id"] != attempts[1]["worker_id"]
     assert json.loads(job["execution_context_json"])["compiler"]["target"] == "linux-riscv64"
     assert coordinator.run(audit["task_id"]) == audit
+
+
+@pytest.mark.skipif(
+    os.environ.get("RECOVERY_INTEGRATION_TESTS") != "1", reason="requires local RabbitMQ and Redis"
+)
+@pytest.mark.parametrize("language", ["c17", "cpp17"])
+def test_riscv_submission_uses_agent_rpc_broker_and_correctness_audit(
+    tmp_path, runner, agents, language
+):
+    from dataclasses import replace
+
+    from compiler_optimizer.client import prepare_upload, upload_frames
+    from compiler_optimizer.runtime.coordinator import CoordinatorService
+    from compiler_optimizer.runtime.dispatch import SubmissionDispatcher
+    from compiler_optimizer.runtime.transfer import ArtifactTransferService
+    from compiler_optimizer.shared.workflow import default_workflow
+
+    repo = Repository(tmp_path / "state")
+    package = read_package(EXAMPLES / "sum-array")
+    if language == "cpp17":
+        files = dict(package.files)
+        manifest = json.loads(files["submission.json"])
+        manifest.update(language=language, sources=["main.cpp"])
+        files["submission.json"] = json.dumps(manifest).encode()
+        files["main.cpp"] = files.pop("main.c")
+        package = package_from_files(files)
+    settings = replace(
+        Settings.from_env("coordinator"),
+        agent_backend="rpc",
+        agent_endpoints=agents[1].agent_endpoints,
+        agent_token=agents[1].agent_token,
+    )
+    config = {**default_workflow(), "agents": ["architecture"], "agent_backend": "rpc"}
+    service = CoordinatorService(repo, workflow_configuration=config)
+    transfer = ArtifactTransferService(
+        repo, service, compiler_resolver=lambda t, lang: runner.compiler(lang)
+    )
+    from types import SimpleNamespace
+
+    context = SimpleNamespace(time_remaining=lambda: 60, is_active=lambda: True)
+    header = prepare_upload(package, tmp_path / "request.json", "linux-riscv64")
+    transfer.UploadPackage(upload_frames(header, package.package_bundle), context)
+    dispatcher = SubmissionDispatcher(repo, settings, runner_factory=lambda _: runner)
+    assert dispatcher.run_once()
+    task = header.meta.task_id
+    result = service.GetOptimizationResult(pb.OptimizationQuery(task_id=task), context)
+    assert result.status == "completed", result.report_json
+    report = json.loads(result.report_json)
+    assert report["status"] == "retained_baseline"
+    candidate = report["candidates"][0]
+    assert candidate["reasons"] == ["emulated_target_correctness_only"], candidate
+    assert candidate["votes"] == {"correctness": "approve", "critic": "approve"}
+    proposal = repo.list_proposals(task)[0]
+    assert proposal.HasField("agent_provenance")
+    assert proposal.compiler.target == "linux-riscv64"
+    verified = next(r for r in repo.list_results(task) if r.proposal_id == proposal.proposal_id)
+    evidence = json.loads(repo.artifacts.get(verified.correctness_report))
+    assert evidence["correctness_passed"]
+    assert evidence["execution"]["mode"] == "qemu-user"
+    assert not repo.list_benchmarks(task)

@@ -1,0 +1,5 @@
+{
+  "bucket": "cmpe273-optimizer-tfstate-123456789012-us-west-2",
+  "dynamodb_table": "cmpe273-optimizer-tfstate-locks",
+  "region": "us-west-2"
+}

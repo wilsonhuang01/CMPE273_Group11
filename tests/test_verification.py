@@ -283,3 +283,29 @@ def test_verified_evidence_requires_reliable_benchmark_before_selection(scenario
             reason="Verified candidate chosen manually",
         )
     assert repo.get_task(task_id)["status"] == "running"
+
+
+def test_optional_coverage_rejects_unsupported_c_contract(scenario):
+    from compiler_optimizer.workers.fuzz_policy import FuzzPolicy
+
+    repo, runner, task, proposal, _ = scenario
+    # The existing scenario is C17, which must fail closed before creating a job.
+    runner.native_execution = True
+    runner.target = "linux-x86_64"
+    with pytest.raises(ContractError, match="native C\\+\\+17"):
+        run_verification(repo, task, proposal, runner, VerificationPlan(coverage=FuzzPolicy()))
+
+
+def test_independent_oracle_rejects_agreeing_but_wrong_reference_and_candidate(scenario):
+    from compiler_optimizer.workers.domains import DomainGenerator
+
+    repo, runner, task, proposal, _ = scenario
+    # Both mocked sum executables agree on 0 for empty input; the sorting contract
+    # independently requires an empty output line.
+    result = run_verification(
+        repo, task, proposal, runner, VerificationPlan(generator=DomainGenerator("sort", cases=1))
+    )
+    assert result.failure.reason == pb.OUTPUT_MISMATCH
+    report = json.loads(repo.artifacts.get(result.correctness_report))
+    assert report["baseline_invalid"]
+    assert repo.get_task(task)["status"] == "failed"

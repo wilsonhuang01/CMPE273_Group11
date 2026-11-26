@@ -13,6 +13,15 @@ from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.storage.artifacts import ArtifactStore
 from compiler_optimizer.workers.docker_runner import DockerRunner, InfrastructureError
 
+CUDA_TARGET = "cuda-ptx"
+CUDA_FLAGS = (
+    "--ptx",
+    "--std=c++17",
+    "--gpu-architecture=compute_75",
+    "-O2",
+    "--compiler-bindir=/usr/bin/g++-13",
+)
+
 
 class CUDACompileRunner(DockerRunner):
     def __init__(
@@ -46,17 +55,17 @@ class CUDACompileRunner(DockerRunner):
             raise InfrastructureError("offline compiler requires NVCC 13.0")
         self.cuda_version = matched.group(1).decode()
 
-    def compile_ptx(self, source):
+    def compile_ptx(self, source, *, limits=None):
         require(
             type(source) is bytes and 0 < len(source) <= 1024**2, "CUDA source must be 1 byte–1 MiB"
         )
         invocation = self._invoke(
             {
                 "source": base64.b64encode(source).decode(),
-                "wall_seconds": 60,
-                "output_bytes": 65536,
+                "wall_seconds": 60 if limits is None else limits.compile_wall_seconds,
+                "output_bytes": 65536 if limits is None else min(65536, limits.output_kib * 1024),
             },
-            memory=2048,
+            memory=2048 if limits is None else limits.compile_memory_mib,
             compile_mode=True,
             trusted_command=["/usr/bin/python3", "/opt/compiler-worker/cuda_supervisor.py"],
         )
@@ -67,7 +76,18 @@ class CUDACompileRunner(DockerRunner):
         return invocation
 
     def compiler(self, language):
-        raise InfrastructureError("compile-only PTX cannot be admitted as a CPU optimization")
+        from compiler_optimizer.shared.v1 import contracts_pb2 as pb
+
+        if language != "cuda17":
+            raise InfrastructureError("compile-only PTX requires cuda17")
+        return pb.CompilerSettings(
+            executable="nvcc",
+            version=self.cuda_version,
+            image_digest=self.image,
+            language=language,
+            target=CUDA_TARGET,
+            flags=CUDA_FLAGS,
+        )
 
     def compile(self, *args, **kwargs):
         raise InfrastructureError("use compile_ptx for the offline CUDA compiler")
@@ -76,8 +96,10 @@ class CUDACompileRunner(DockerRunner):
         raise InfrastructureError("offline CUDA compilation cannot execute programs or GPU kernels")
 
 
-def compile_artifacts(runner, source, store):
-    invocation = runner.compile_ptx(source)
+def compile_artifacts(runner, source, store, *, limits=None):
+    invocation = (
+        runner.compile_ptx(source) if limits is None else runner.compile_ptx(source, limits=limits)
+    )
 
     def reference(r):
         return {"key": r.key, "sha256": r.sha256, "size_bytes": r.size_bytes}

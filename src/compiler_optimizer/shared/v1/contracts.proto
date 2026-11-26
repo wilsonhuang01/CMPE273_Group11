@@ -48,6 +48,8 @@ message CompilerSettings {
   string language = 4;
   string target = 5;
   repeated string flags = 6;
+  // Empty preserves the original single-thread policy; opt-in native OpenMP profile.
+  string execution_profile = 7;
 }
 
 // Baseline/source candidates hold a source-only bundle. Typed IR candidates hold

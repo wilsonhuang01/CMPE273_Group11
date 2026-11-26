@@ -19,11 +19,11 @@ from pathlib import Path
 
 if __package__:
     from .instrumentation import BUILD_PROFILES, SANITIZER_ENV
-    from .policy import POLICY_DIGEST, POLICY_VERSION
+    from .policy import FUZZ_POLICY_DIGEST, POLICY_VERSION, execution_policy
     from .targets import X86, compiler_flags, target_profile
 else:
     from instrumentation import BUILD_PROFILES, SANITIZER_ENV
-    from policy import POLICY_DIGEST, POLICY_VERSION
+    from policy import FUZZ_POLICY_DIGEST, POLICY_VERSION, execution_policy
     from targets import X86, compiler_flags, target_profile
 
 MAX_BINARY_BYTES = 16 * 1024**2
@@ -38,14 +38,14 @@ def _oom_count():
     return int(values.get("oom_kill", 0))
 
 
-def _limits(wall, compile_mode, emulated=False, measured=False):
+def _limits(wall, compile_mode, emulated=False, measured=False, fuzz=False, parallel=False):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    cpu = max(1, math.ceil(wall) + 1)
+    cpu = max(1, math.ceil(wall * (2 if parallel else 1)) + 1)
     resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_BINARY_BYTES, MAX_BINARY_BYTES))
     # RLIMIT_NPROC is host-UID-wide, including other containers. QEMU's local
     # thread budget is enforced by pids.max=4 plus a no-child-process filter.
-    process_limit = 64 if compile_mode else 4096 if emulated or measured else 1
+    process_limit = 64 if compile_mode else 4096 if emulated or measured or fuzz else 1
     resource.setrlimit(resource.RLIMIT_NPROC, (process_limit, process_limit))
     resource.setrlimit(resource.RLIMIT_NOFILE, (256, 256) if compile_mode else (64, 64))
     if emulated and not compile_mode:
@@ -57,11 +57,36 @@ def _limits(wall, compile_mode, emulated=False, measured=False):
 
 
 def execute(
-    argv, stdin, wall, output_limit, *, compile_mode, build_profile="normal", emulated=False
+    argv,
+    stdin,
+    wall,
+    output_limit,
+    *,
+    compile_mode,
+    build_profile="normal",
+    emulated=False,
+    fuzz=False,
+    parallel=False,
+    harness=False,
+    perf=False,
 ):
     started = time.perf_counter()
+    energy_before = None
+    if perf:
+        if __package__:
+            from .energy import measurement as energy_measurement
+            from .energy import snapshot as energy_snapshot
+        else:
+            from energy import measurement as energy_measurement
+            from energy import snapshot as energy_snapshot
+        energy_before = energy_snapshot()
     oom_before = _oom_count()
-    measured = not compile_mode and not emulated and Path("/opt/compiler-worker/measure").is_file()
+    measured = (
+        not compile_mode
+        and not emulated
+        and not fuzz
+        and Path("/opt/compiler-worker/measure").is_file()
+    )
     process = subprocess.Popen(
         ["/opt/compiler-worker/measure", *argv] if measured else argv,
         stdin=subprocess.PIPE,
@@ -77,9 +102,26 @@ def execute(
             "LANG": "C",
             "LC_ALL": "C",
             "HOME": "/tmp",
+            "CO_THREADED": "1" if parallel or harness else "0",
+            "CO_PERF": "1" if perf else "0",
+            **(
+                {
+                    "OMP_NUM_THREADS": "2",
+                    "OMP_THREAD_LIMIT": "2",
+                    "OMP_DYNAMIC": "FALSE",
+                    "OMP_MAX_ACTIVE_LEVELS": "1",
+                    "OMP_PROC_BIND": "FALSE",
+                    "KMP_BLOCKTIME": "0",
+                    "LIBOMP_NUM_HIDDEN_HELPER_THREADS": "0",
+                    "KMP_ENABLE_MONITOR": "0",
+                }
+                if parallel
+                else {}
+            ),
+            **({"LLVM_PROFILE_FILE": "/tmp/coverage.profraw"} if fuzz else {}),
             **(SANITIZER_ENV if build_profile != "normal" else {}),
         },
-        preexec_fn=lambda: _limits(wall, compile_mode, emulated, measured),
+        preexec_fn=lambda: _limits(wall, compile_mode, emulated, measured, fuzz, parallel),
     )
     buffers = {"stdout": bytearray(), "stderr": bytearray()}
     reason = None
@@ -129,12 +171,21 @@ def execute(
     for stream in (process.stdin, process.stdout, process.stderr):
         stream.close()
     returncode = process.returncode
+    cpu = (
+        resource.getrusage(resource.RUSAGE_CHILDREN).ru_utime
+        + resource.getrusage(resource.RUSAGE_CHILDREN).ru_stime
+    )
+    counters = None
     peak = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * 1024
     if measured and reason is None and _oom_count() == oom_before:
         usage = json.loads(Path("/work/run/usage.json").read_text())
         if usage["error"] or process.returncode != 0:
             raise RuntimeError("native measurement launcher failed")
         returncode, peak = usage["returncode"], usage["peak_memory_bytes"]
+        cpu = usage.get("cpu_seconds", cpu)
+        counters = usage.get("perf")
+        if perf and isinstance(counters, dict):
+            counters["energy-pkg"] = energy_measurement(energy_before, energy_snapshot())
     if reason is None and _oom_count() > oom_before:
         reason = "memory_limit"
     if reason is None and returncode:
@@ -143,14 +194,16 @@ def execute(
         "stdout": base64.b64encode(buffers["stdout"]).decode(),
         "stderr": base64.b64encode(buffers["stderr"]).decode(),
         "wall_seconds": time.perf_counter() - started,
-        "cpu_seconds": resource.getrusage(resource.RUSAGE_CHILDREN).ru_utime
-        + resource.getrusage(resource.RUSAGE_CHILDREN).ru_stime,
+        "cpu_seconds": cpu,
+        **({"perf": counters} if perf else {}),
         "peak_memory_bytes": peak,
         "returncode": returncode,
         "failure": reason,
         "kernel_machine": platform.machine(),
         "policy_version": POLICY_VERSION,
-        "policy_digest": POLICY_DIGEST,
+        "policy_digest": FUZZ_POLICY_DIGEST
+        if fuzz
+        else execution_policy(parallel=parallel, perf=perf, harness=harness)[1],
         "build_profile": build_profile,
         "command": argv,
     }
@@ -276,13 +329,55 @@ def llvm_main(request):
     print(json.dumps(report))
 
 
+def mlir_main(request):
+    if __package__:
+        from .mlir_policy import PIPELINES
+    else:
+        from mlir_policy import PIPELINES
+    recipe = PIPELINES[request["stage"]]
+    identity = subprocess.run(
+        [recipe[0], "--version"], capture_output=True, timeout=5, check=True
+    ).stdout.decode()
+    if request["llvm_version"] not in identity.split():
+        raise ValueError("MLIR tool differs from pinned Clang version")
+    data = base64.b64decode(request["module"], validate=True)
+    if not 0 < len(data) <= MAX_BINARY_BYTES:
+        raise ValueError("invalid MLIR input size")
+    source, output = Path("/work/src/kernel.mlir"), Path("/work/build/program")
+    source.write_bytes(data)
+    source.chmod(0o444)
+    report = execute(
+        [*recipe, str(source), "-o", str(output)],
+        b"",
+        request["wall_seconds"],
+        request["output_bytes"],
+        compile_mode=True,
+    )
+    if report["failure"] is None:
+        if not output.is_file() or not 0 < output.stat().st_size <= MAX_BINARY_BYTES:
+            raise ValueError("invalid MLIR output")
+        report["binary"] = base64.b64encode(output.read_bytes()).decode()
+    print(json.dumps(report))
+
+
 def main():
     request = json.load(sys.stdin)
+    if request["mode"] == "fuzz":
+        from fuzz_runtime import fuzz_main
+
+        return fuzz_main(request, execute)
+    if request["mode"] == "mlir":
+        return mlir_main(request)
     if request["mode"] == "llvm":
         return llvm_main(request)
     if request["mode"] not in ("compile", "execute"):
         raise ValueError("invalid invocation mode")
     compile_mode = request["mode"] == "compile"
+    execution_profile = request.get("execution_profile", "")
+    if execution_profile not in ("", "parallel-2"):
+        raise ValueError("unsupported execution profile")
+    parallel = execution_profile == "parallel-2"
+    harness, perf = request.get("harness", False), request.get("perf", False)
     profile = request.get("build_profile", "normal")
     target = target_profile(request.get("target", X86.name))
     if target.emulator and profile == "address-undefined":
@@ -302,13 +397,14 @@ def main():
             raise ValueError("unsupported language")
         argv = [
             "/usr/bin/clang-18" if language == "c17" else "/usr/bin/clang++-18",
-            *compiler_flags(target.name, language),
+            *compiler_flags(target.name, language, execution_profile),
             *BUILD_PROFILES[profile],
             *(["-fsanitize-trap=all"] if target.emulator and profile != "normal" else []),
             "-I",
             "/work/src",
             *["/work/src/" + name for name in request["sources"]],
             "-lm",
+            *(["-lbenchmark", "-lpthread"] if profile == "microbenchmark" else []),
             "-o",
             "/work/build/program",
         ]
@@ -336,6 +432,9 @@ def main():
         compile_mode=compile_mode,
         build_profile=profile,
         emulated=bool(target.emulator),
+        parallel=parallel,
+        harness=harness,
+        perf=perf,
     )
     if compile_mode and report["failure"] is None:
         path = Path("/work/build/program")

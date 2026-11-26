@@ -102,6 +102,30 @@ PROFILE = {
 }
 POLICY_JSON = json.dumps(PROFILE, sort_keys=True, separators=(",", ":"))
 POLICY_DIGEST = hashlib.sha256(POLICY_JSON.encode()).hexdigest()
+# libFuzzer uses a process-local interval timer for its per-input watchdog.
+FUZZ_PROFILE = {
+    **PROFILE,
+    "syscalls": [*PROFILE["syscalls"], {"names": ["setitimer"], "action": "SCMP_ACT_ALLOW"}],
+}
+FUZZ_POLICY_JSON = json.dumps(FUZZ_PROFILE, sort_keys=True, separators=(",", ":"))
+FUZZ_POLICY_DIGEST = hashlib.sha256(FUZZ_POLICY_JSON.encode()).hexdigest()
+
+
+def execution_policy(*, parallel=False, perf=False, harness=False):
+    """Distinct identities for opt-in profiles; the default profile stays byte-identical."""
+    extra = (["sched_setaffinity"] if parallel or harness else []) + (
+        ["perf_event_open"] if perf else []
+    )
+    value = (
+        {
+            **PROFILE,
+            "syscalls": [*PROFILE["syscalls"], {"names": extra, "action": "SCMP_ACT_ALLOW"}],
+        }
+        if extra
+        else PROFILE
+    )
+    data = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return data, hashlib.sha256(data.encode()).hexdigest()
 
 
 def validate_host_config(
@@ -113,6 +137,11 @@ def validate_host_config(
     cpu_id=None,
     target="linux-x86_64",
     measurement_version=1,
+    fuzz_mode=False,
+    parallel=False,
+    perf=False,
+    harness=False,
+    cpu_ids=None,
 ) -> None:
     """Fail closed if Docker's effective create settings weaken the required policy."""
     required = {
@@ -121,9 +150,15 @@ def validate_host_config(
         "Privileged": False,
         "Memory": memory * 1024**2,
         "MemorySwap": memory * 1024**2,
-        "NanoCpus": 1_000_000_000,
+        "NanoCpus": (2 if parallel and not compile_mode else 1) * 1_000_000_000,
         "PidsLimit": 64
         if compile_mode
+        else 6
+        if harness
+        else 4
+        if parallel
+        else 8
+        if fuzz_mode
         else 4
         if target == "linux-riscv64"
         else 3
@@ -135,7 +170,12 @@ def validate_host_config(
     for name, value in required.items():
         if config.get(name) != value:
             raise ValueError(f"Docker sandbox policy mismatch: {name}")
-    if config.get("CpusetCpus", "") != ("" if cpu_id is None else str(cpu_id)):
+    affinity = (
+        ",".join(map(str, cpu_ids))
+        if cpu_ids is not None
+        else ("" if cpu_id is None else str(cpu_id))
+    )
+    if config.get("CpusetCpus", "") != affinity:
         raise ValueError("Docker sandbox CPU affinity mismatch")
     if {value.removeprefix("CAP_") for value in config.get("CapDrop") or ()} != {"ALL"}:
         raise ValueError("Docker sandbox must drop all capabilities")
@@ -152,7 +192,12 @@ def validate_host_config(
     if len(security) != 2 or "no-new-privileges" not in security or len(profiles) != 1:
         raise ValueError("unexpected Docker security options")
     try:
-        if json.loads(profiles[0]) != PROFILE:
+        expected = (
+            FUZZ_PROFILE
+            if fuzz_mode
+            else json.loads(execution_policy(parallel=parallel, perf=perf, harness=harness)[0])
+        )
+        if json.loads(profiles[0]) != expected:
             raise ValueError("Docker seccomp profile mismatch")
     except (ValueError, TypeError) as error:
         raise ValueError("Docker seccomp profile mismatch") from error

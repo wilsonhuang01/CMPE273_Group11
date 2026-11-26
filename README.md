@@ -8,6 +8,9 @@ for native ARM64 and x86-64 targets, with explicit abstention outside the suppor
 Optional [LLVM IR pass proposals](docs/llvm-ir.md) use pinned LLVM 18 tools and
 trusted pass recipes through the same native verification and selection gates.
 
+The [bounded MLIR kernel path](docs/mlir.md) tiles typed integer array-add and
+scale kernels, lowers to native code and checks every result with an independent oracle.
+
 Optional [bounded debate and revision rounds](docs/debate.md) feed review findings
 back to generators while preserving frozen tests, measurement budgets and a
 held-out final evaluation gate.
@@ -42,6 +45,11 @@ The [autonomous worker guide](docs/autonomous-workers.md) describes
 `EXECUTION_BACKEND=remote`, `./project scheduler` and independent `./project worker`
 processes. The coordinator keeps durable state and acceptance checks; trusted
 workers own Docker execution and return fenced results over RPC.
+
+[AWS infrastructure](docs/aws-infrastructure.md) defines dev, staging and production
+environments as Terraform; `./project infra up --env staging` provisions the private
+network, roles, keys, secrets and budgets after showing a saved plan, and
+`./project infra down --env staging` tears it down.
 
 ## Initial implementation scope
 
@@ -118,7 +126,10 @@ python -m compiler_optimizer.workers.benchmark TASK_ID \
 
 See [reproducible benchmarking](docs/benchmarking.md) for CPU pinning, warmups,
 paired repetitions, runtime/memory statistics, durable reports, and conservative
-selection gates. Performance qualification requires a native Linux amd64 worker.
+selection gates. Performance qualification requires a native Linux CPU worker.
+See [benchmark tools and bounded parallel execution](docs/benchmark-tools.md) for
+opt-in two-thread OpenMP, Google Benchmark kernel adapters, and optional perf/energy
+diagnostics.
 
 ## Run the first complete Performance Agent workflow
 
@@ -215,10 +226,14 @@ Offline CUDA compilation is also available without a GPU:
 docker compose --profile toolchain build compiler
 docker compose --profile cuda-compile build compiler-cuda
 python -m compiler_optimizer.workers.cuda_compile examples/cuda/vector_add.cu
+# Or submit through a running local host service:
+./project client submit examples/cuda --target cuda-ptx \
+  --request-file var/cuda-request.json --wait
 ```
 
 CUDA execution remains unavailable on this machine. GPU quarantine/recovery
-decision contracts are tested without issuing hardware commands; actual NVIDIA
+contracts include a simulated device registry and fenced exclusive leases, tested
+without issuing hardware commands; actual NVIDIA
 workers, CUDA-event timing and host recovery await suitable hardware. Compile-only
 PTX artifacts explicitly carry no correctness or performance qualification.
 

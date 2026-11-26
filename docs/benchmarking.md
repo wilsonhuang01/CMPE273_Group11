@@ -139,3 +139,11 @@ failure handling, binary reuse, report tampering/corruption, final selection and
 v1 migration. The Docker test checks actual CPU pinning, all paired measurements,
 cleanup and conservative retention on a tiny workload; it makes no timing-based
 speedup assertion on shared CI hardware.
+
+## Supplementary tools and parallel source programs
+
+[Action M benchmark tools](benchmark-tools.md) add opt-in native two-thread/two-CPU
+execution, same-resource paired comparison and CPU accounting. Google Benchmark
+sum/dot adapters and optional perf/powercap diagnostics persist separate reports;
+they never replace end-to-end runtime/RSS qualification. The default single-thread
+execution and statistical policies remain unchanged.

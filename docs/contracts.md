@@ -66,7 +66,14 @@ the selected controlled CPU target, and ordered flags. For `linux-x86_64` the fl
 optimization and warning flags. `linux-riscv64` uses the controlled cross-compiler
 flags and correctness-only emulator policy in [Architecture support](architectures.md).
 Workers may advertise supported CPU targets without duplicates. CUDA is
-not an admitted CPU language or execution target.
+not an admitted CPU language or execution target. The separate compile-only
+`cuda17` language uses `nvcc` 13.0.x, a pinned image, target `cuda-ptx`, and fixed
+`--ptx --std=c++17 --gpu-architecture=compute_75 -O2
+--compiler-bindir=/usr/bin/g++-13` flags. CUDA manifests require exactly one `.cu`
+source and empty tests/benchmark IDs. CUDA submissions and source proposals use
+the same intake and version contracts; `VerificationJob`/`VerificationResult`
+explicitly reject CUDA. The task API returns compile audits and artifacts instead
+of verified/selected results. See [Architecture support](architectures.md).
 
 C++17 uses `-std=c++17`. Source arguments, controlled include paths, `-lm`, and the
 output path are appended by the worker as specified in the workload contract;
@@ -244,3 +251,13 @@ and adds `Review`, `PlanBenchmark`, `PutArtifact`, `GetArtifact` and `Ping`.
 Optional `OptimizationRequest.replay_patch` and `Proposal.structured_patch` /
 `agent_provenance` fields preserve older local message formats. Existing field
 numbers are unchanged. See [agent RPC authority and validation](agent-rpc.md).
+
+## Optional native parallel execution profile
+
+`CompilerSettings.execution_profile` is empty for the original single-thread
+contract, preserving existing serialized messages. `parallel-2` selects the fixed
+native two-thread/two-CPU policy and adds exactly `-fopenmp -DCO_THREADS=2` to the
+controlled target flags. Proposals, jobs, results and benchmark evidence retain
+the same compiler identity; profiles cannot be mixed within a task. RISC-V and
+parallel fleet/IR execution are not enabled by this field. See
+[benchmark tools](benchmark-tools.md) for local execution and measurement bounds.

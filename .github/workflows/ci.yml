@@ -28,7 +28,7 @@ jobs:
       - name: Install compiler toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install --yes clang-18
+          sudo apt-get install --yes clang-18 libomp-18-dev libbenchmark-dev
       - name: Install Python package and development tools
         run: python -m pip install -e '.[dev]'
       - name: Check Python formatting and lint
@@ -38,12 +38,12 @@ jobs:
       - name: Check generated message contracts
         run: python tools/generate_contracts.py --check
       - name: Test contracts, storage, and service runtime
-        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_evaluation.py
+        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_measurement_tools.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_action_n.py tests/test_evaluation.py tests/test_infra.py
       - name: Check C formatting
-        run: clang-format --dry-run --Werror examples/sum-array/main.c examples/sum-array-optimized/main.c examples/sum-array-buffered/main.c
+        run: clang-format --dry-run --Werror examples/sum-array/main.c examples/sum-array-optimized/main.c examples/sum-array-buffered/main.c docker/measure.c docker/perf.h examples/parallel-sum/main.cpp examples/benchmarks/sum_benchmark.cpp
       - name: Configure and build trusted example
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPython3_EXECUTABLE="$(command -v python)"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_KERNEL_BENCHMARKS=ON -DPython3_EXECUTABLE="$(command -v python)"
           cmake --build build --parallel
       - name: Test example fixtures
         run: ctest --test-dir build --output-on-failure --no-tests=error
@@ -56,6 +56,22 @@ jobs:
           python -c 'import compiler_optimizer.coordinator, compiler_optimizer.agents, compiler_optimizer.scheduler, compiler_optimizer.workers, compiler_optimizer.monitoring, compiler_optimizer.shared'
           python -c 'from compiler_optimizer.shared.manifest import parse_manifest; from compiler_optimizer.shared.v1 import contracts_pb2_grpc'
           python -c 'import tempfile; from compiler_optimizer.storage import Repository; temporary = tempfile.TemporaryDirectory(); assert Repository(temporary.name).list_tasks() == []; temporary.cleanup()'
+
+  infrastructure:
+    # Static checks only: no AWS credentials are available or needed here.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+          terraform_wrapper: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check Terraform formatting, validation and environment settings
+        run: python tools/infra.py check
 
   compose:
     runs-on: ubuntu-24.04
@@ -97,12 +113,27 @@ jobs:
           TRANSFORMATION_INTEGRATION_TESTS: "1"
           LLVM_INTEGRATION_TESTS: "1"
         run: python -m pytest --basetemp="${RUNNER_TEMP}/compiler-optimizer-tests" tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_dispatch_docker.py tests/test_transfer_docker.py tests/test_fleet_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_concurrency_docker.py tests/test_agent_rpc_docker.py tests/test_debate_docker.py tests/test_transformations_docker.py tests/test_llvm_ir_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py
+      - name: Test Action L correctness domains and coverage-guided fuzzing
+        env:
+          BASELINE_DOCKER_TESTS: "1"
+          COMPILER_IMAGE: cmpe273-clang:18
+          COMPILER_TARGET: linux-x86_64
+        run: python -m pytest --basetemp="${RUNNER_TEMP}/action-l-tests" tests/test_correctness_domains_docker.py -v
+      - name: Test bounded parallel measurements and benchmark tools
+        env:
+          BASELINE_DOCKER_TESTS: "1"
+          COMPILER_IMAGE: cmpe273-clang:18
+          COMPILER_TARGET: linux-x86_64
+        run: python -m pytest --basetemp="${RUNNER_TEMP}/action-m-tests" tests/test_measurement_tools_docker.py -v
       - name: Preserve malformed sandbox protocol evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: sandbox-protocol-diagnostics
-          path: ${{ runner.temp }}/compiler-optimizer-tests/**/protocol-error.json
+          path: |
+            ${{ runner.temp }}/compiler-optimizer-tests/**/protocol-error.json
+            ${{ runner.temp }}/action-l-tests/**/protocol-error.json
+            ${{ runner.temp }}/action-m-tests/**/protocol-error.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Write persistent artifact

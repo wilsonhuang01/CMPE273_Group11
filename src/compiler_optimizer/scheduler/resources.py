@@ -60,7 +60,7 @@ def runner_capacity(runner):
 
 
 @contextmanager
-def engine_window(engine_id, capacity, *, memory_mib=128, exclusive=False, timeout=60):
+def engine_window(engine_id, capacity, *, memory_mib=128, cpus=1, exclusive=False, timeout=60):
     """Hold a VM-wide read/write gate and explicit CPU/memory reservations.
 
     Separate state directories and worker processes share these locks. A writer
@@ -73,13 +73,15 @@ def engine_window(engine_id, capacity, *, memory_mib=128, exclusive=False, timeo
         "work exceeds Docker memory reservation",
     )
     held = HELD.get() or {}
+    require(type(cpus) is int and 1 <= cpus <= capacity.cpus, "work exceeds Docker CPU reservation")
     if engine_id in held:
-        owning_measurement, reserved_mib = held[engine_id]
+        owning_measurement, reserved_mib, reserved_cpus = held[engine_id]
         require(not exclusive or owning_measurement, "cannot upgrade shared work to measurement")
         require(
             owning_measurement or memory_mib <= reserved_mib,
             "nested work exceeds memory reservation",
         )
+        require(owning_measurement or cpus <= reserved_cpus, "nested work exceeds CPU reservation")
         yield
         return
     root = Path(tempfile.gettempdir()) / f"compiler-optimizer-admission-{os.getuid()}"
@@ -125,7 +127,9 @@ def engine_window(engine_id, capacity, *, memory_mib=128, exclusive=False, timeo
                 live = []
                 for row in rows:
                     require(
-                        set(row) == {"token", "memory_mib"}
+                        set(row) in ({"token", "memory_mib"}, {"token", "memory_mib", "cpus"})
+                        and type(row.get("cpus", 1)) is int
+                        and 0 < row.get("cpus", 1) <= capacity.cpus
                         and type(row["memory_mib"]) is int
                         and row["memory_mib"] > 0
                         and len(row["token"]) == 32
@@ -143,11 +147,11 @@ def engine_window(engine_id, capacity, *, memory_mib=128, exclusive=False, timeo
                     finally:
                         os.close(fd)
                 admitted = (
-                    len(live) < capacity.cpus
+                    sum(r.get("cpus", 1) for r in live) + cpus <= capacity.cpus
                     and sum(r["memory_mib"] for r in live) + memory_mib <= capacity.memory_mib
                 )
                 if admitted:
-                    live.append({"token": owner_path, "memory_mib": memory_mib})
+                    live.append({"token": owner_path, "memory_mib": memory_mib, "cpus": cpus})
                 temporary = directory / (owner_path + ".json")
                 temporary.write_text(json.dumps(live, sort_keys=True))
                 os.replace(temporary, path)
@@ -157,7 +161,7 @@ def engine_window(engine_id, capacity, *, memory_mib=128, exclusive=False, timeo
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Docker resource reservation deadline")
                 time.sleep(0.05)
-        token = HELD.set({**held, engine_id: (exclusive, memory_mib)})
+        token = HELD.set({**held, engine_id: (exclusive, memory_mib, cpus)})
         try:
             yield
         finally:
