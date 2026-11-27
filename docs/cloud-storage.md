@@ -6,7 +6,7 @@ worker fleet (U) can use shared managed services. It is being delivered in phase
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | S3 artifact backend; TLS-aware RabbitMQ (Amazon MQ) and Redis (ElastiCache) clients | **Implemented** |
-| 2 | PostgreSQL repository backend (Amazon RDS) with migrations; SQLite stays the local default | Planned |
+| 2 | PostgreSQL repository backend (Amazon RDS) with versioned schema; SQLite stays the local default | **Implemented** |
 | 3 | Database-backed dispatch claims, leases and fencing replacing the local pipeline lock | Planned |
 | 4 | Terraform for the S3 bucket, RDS, Amazon MQ and ElastiCache; broker/cache validation against the managed engines; secret rotation | Planned |
 
@@ -63,9 +63,58 @@ The agents' private caches stay local.
 
 The S3 backend needs `boto3`: `pip install -e '.[aws]'`.
 
-The SQLite database still lives in `STATE_DIRECTORY` during phase 1. That is enough for
-a single coordinator host whose blobs are durable in S3. Phase 2 removes the remaining
-single-host state.
+With phase 2, `DATABASE_URL` also moves task state off the coordinator host; see below.
+
+## PostgreSQL repository (phase 2)
+
+With `DATABASE_URL` set, the coordinator keeps all task state in PostgreSQL instead of
+`STATE_DIRECTORY/state.sqlite3`. All storage modules run unchanged on either engine.
+`storage/postgres.py` runs the existing SQL on PostgreSQL:
+
+- **Same schema, same order.** `storage/postgres.sql` is the SQLite version 12 schema
+  with 64-bit `BIGINT` columns and `BYTEA` payloads. Columns stay in the same order
+  because the repository inserts rows by position. Each table has a hidden trailing
+  `rowid` identity column, so `ORDER BY rowid` keeps SQLite's insertion order. Rows hide
+  it and support both `row[0]` and `row["name"]`, like `sqlite3.Row`.
+- **Two dialect rewrites only.** `?` becomes `%s`, and `INSERT OR IGNORE` becomes
+  `INSERT … ON CONFLICT DO NOTHING`. Parameters are bound client-side, so untyped
+  expressions such as `? IS NULL` behave as they do in SQLite. Python booleans are
+  stored as 0/1, as SQLite stores them.
+- **Same transaction semantics.** Every write transaction first takes a
+  transaction-scoped advisory lock for its schema. Writers are therefore serialized,
+  as with SQLite `BEGIN IMMEDIATE`, and every statement sees all previously committed
+  writes (READ COMMITTED). Reads run as REPEATABLE READ, READ ONLY snapshots. Lock waits
+  are capped at 10 s and statements at 30 s.
+- **Same errors.** Unique, foreign-key and check violations raise `ConflictError`.
+  Connection loss, timeouts and server errors raise `UnavailableError`, which the RPC
+  handlers map to `UNAVAILABLE`. A failed transaction is rolled back as a whole.
+- **Failover-tolerant pool.** Each coordinator keeps up to four idle connections. If a
+  restart or RDS failover has closed a pooled connection, the next transaction replaces
+  it before running anything, so callers don't see the dead connection. Connections are
+  never shared across `fork`.
+- **Versioned schema.** On first start, the repository creates the schema and records
+  version 12 in `schema_version`, under the same lock, so concurrent starts are safe.
+  An unknown version is rejected without changing any data. Schema changes after
+  version 12 must be added as transactional steps for both engines. There is no
+  automatic downgrade.
+- **Fencing unchanged.** Execution-lease fences use the database identity (host, port,
+  database and schema, never credentials), so leases behave as with SQLite.
+
+Phase 2 makes state durable and shared, so a replacement coordinator on another host
+resumes every task, attempt count and decision. It does **not** yet make concurrent
+coordinators safe. Automatic execution is still guarded by the local `pipeline.lock` in
+`STATE_DIRECTORY`, so run **one** coordinator per database schema until phase 3 adds
+database-backed claims and fencing.
+
+| Variable | Meaning |
+|---|---|
+| `DATABASE_URL` | `postgresql://user@host:5432/dbname`. Accepted only for the coordinator. It must not contain a password. Any non-loopback host requires `sslmode=verify-full`, e.g. `?sslmode=verify-full&sslrootcert=/etc/rds/global-bundle.pem` for RDS. |
+| `DATABASE_PASSWORD` | Password, injected from Secrets Manager. Never logged or shown in `repr`. `PGPASSWORD` also works. |
+| `DATABASE_SCHEMA` | Schema holding the tables (default `optimizer`). Separate schemas isolate environments in one database. |
+
+Install the driver with `pip install -e '.[postgres]'` (psycopg 3). SQLite remains the
+default and needs nothing extra. `./project` tools other than `serve`, such as
+evaluation checkpoints and the standalone CLIs, still use local SQLite state.
 
 ## TLS for the broker and cache
 
@@ -84,6 +133,26 @@ With TLS enabled, clients require TLS 1.2 or later, a valid certificate chain an
 matching hostname. Certificate checks cannot be turned off; use a CA bundle instead.
 
 ## Tests
+
+`python -m pytest tests/test_postgres_storage.py` checks SQL translation, rows and
+configuration offline. With a server, `--postgres-url` (or `TEST_POSTGRES_URL`) adds
+tests for state shared between separate coordinator roots, durability across an abrupt
+process exit, whole-transaction rollback, writer serialization, lock-timeout and outage
+errors, replacing connections killed by a server restart, read-only snapshots and
+rejecting an unknown schema version.
+
+The same option reruns the **entire** suite on PostgreSQL. Every `Repository(root)`
+gets its own schema, and spawned `./project serve` coordinators are pointed at it:
+
+```sh
+initdb -D /tmp/pg -U optimizer --auth=trust
+pg_ctl -D /tmp/pg -o "-p 55432 -k '' -c listen_addresses=127.0.0.1" -l /tmp/pg.log start
+createdb -h 127.0.0.1 -p 55432 -U optimizer optimizer_test
+python -m pytest -m "not docker" --postgres-url postgresql://optimizer@127.0.0.1:55432/optimizer_test
+```
+
+Tests marked `sqlite_only` (SQLite migration history, file inspection and the evaluation
+checkpoint copy) are skipped in that mode.
 
 `python -m pytest tests/test_cloud_storage.py` runs offline against an in-memory S3
 client that models conditional puts, checksums and error codes. It covers round trips,

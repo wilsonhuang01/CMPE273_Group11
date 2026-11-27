@@ -441,6 +441,7 @@ def test_failed_task_is_terminal_and_results_are_defensive_copies(scenario):
         )
 
 
+@pytest.mark.sqlite_only
 def test_process_restart_preserves_committed_state(scenario):
     repo, submission, *_ = scenario
     repo.save_submission(submission)
@@ -457,6 +458,7 @@ os._exit(0)
     assert Repository(repo.root).get_task(submission.meta.task_id)["status"] == "running"
 
 
+@pytest.mark.sqlite_only
 def test_unknown_schema_is_not_overwritten(scenario):
     repo, submission, *_ = scenario
     repo.save_submission(submission)

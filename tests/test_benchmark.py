@@ -300,6 +300,7 @@ def test_raw_artifact_corruption_blocks_selection(verified):
         repo.select_result(task, result.job_id, 1, expected_revision=1, reason="Gain")
 
 
+@pytest.mark.sqlite_only
 def test_schema_one_migrates_without_losing_data(tmp_path):
     root = tmp_path / "state"
     root.mkdir()

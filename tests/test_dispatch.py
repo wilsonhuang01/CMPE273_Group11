@@ -111,6 +111,7 @@ def test_automatic_submission_runs_its_frozen_debate_policy(submitted):
     assert execution["configuration"]["debate_policy"] == config["debate_policy"]
 
 
+@pytest.mark.sqlite_only
 def test_queue_insert_failure_rolls_back_submission(submitted):
     repo, _, request = submitted
     with repo._transaction() as db:

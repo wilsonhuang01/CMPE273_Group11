@@ -33,6 +33,9 @@ class Settings:
     artifact_kms_key_id: str = ""
     aws_region: str | None = None
     s3_endpoint_url: str | None = None
+    database_url: str = field(default="", repr=False)
+    database_password: str = field(default="", repr=False)
+    database_schema: str = "optimizer"
     coordinator_health_url: str = "http://localhost:18080/readyz"
     state_directory: Path = Path("var")
     health_host: str = "127.0.0.1"
@@ -141,6 +144,14 @@ class Settings:
             raise ValueError("the S3 artifact backend is owned by the coordinator role")
         if artifact_backend == "s3" and not env.get("ARTIFACT_S3_BUCKET"):
             raise ValueError("ARTIFACT_BACKEND=s3 requires ARTIFACT_S3_BUCKET")
+        from compiler_optimizer.storage.postgres import validate_database_url, validate_schema
+
+        database_url = env.get("DATABASE_URL", "")
+        if database_url:
+            if role != "coordinator":
+                raise ValueError("the PostgreSQL repository is owned by the coordinator role")
+            validate_database_url(database_url)
+        database_schema = validate_schema(env.get("DATABASE_SCHEMA", "optimizer"))
         s3_endpoint = env.get("S3_ENDPOINT_URL") or None
         if s3_endpoint is not None:
             endpoint = urlsplit(s3_endpoint)
@@ -195,6 +206,9 @@ class Settings:
             artifact_kms_key_id=env.get("ARTIFACT_S3_KMS_KEY_ID", ""),
             aws_region=env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION") or None,
             s3_endpoint_url=s3_endpoint,
+            database_url=database_url,
+            database_password=env.get("DATABASE_PASSWORD", ""),
+            database_schema=database_schema,
             health_port=number(
                 "HEALTH_PORT", 18091 + AGENT_NAMES.index(role) if role in AGENT_NAMES else 8080
             ),

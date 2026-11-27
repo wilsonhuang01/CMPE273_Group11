@@ -166,7 +166,7 @@ a network filesystem. WAL requires shared memory on one host, as described in th
 setting follows [SQLite synchronous documentation](https://www.sqlite.org/pragma.html#pragma_synchronous).
 This backend supports process restarts and concurrent local callers; it does not
 replicate state or tolerate loss of the storage host/disk. Multiple coordinator
-hosts will require a shared database such as PostgreSQL and an object-store backend.
+hosts use the PostgreSQL and S3 backends described in [cloud storage](cloud-storage.md).
 
 For a consistent backup, stop writers and copy the entire state directory,
 including any `-wal`/`-shm` files and all blobs. Restore that directory as a unit.

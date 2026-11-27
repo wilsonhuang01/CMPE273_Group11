@@ -48,7 +48,7 @@ def wait_for(action, process, log, timeout=180):
     pytest.fail("coordinator did not reach checkpoint: " + log.read_text()[-8000:])
 
 
-def test_submission_resumes_after_actual_coordinator_process_loss(tmp_path):
+def test_submission_resumes_after_actual_coordinator_process_loss(tmp_path, service_database_env):
     repo = Repository(tmp_path / "state")
     package = read_package(ROOT / "examples/sum-array")
     target = native_target()
@@ -71,6 +71,7 @@ def test_submission_resumes_after_actual_coordinator_process_loss(tmp_path):
         HEALTH_HOST="127.0.0.1",
         GRPC_HOST="127.0.0.1",
         EXECUTION_ENABLED="true",
+        **service_database_env(repo.root),
     )
     log = tmp_path / "coordinator.log"
     process = None

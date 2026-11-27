@@ -305,6 +305,7 @@ def test_bad_agent_output_never_reaches_broker(workflow):
     assert broker.events == []
 
 
+@pytest.mark.sqlite_only
 def test_schema_two_migration_keeps_task_history(workflow):
     repository, _, task, _, _ = workflow
     history = repository.history(task)

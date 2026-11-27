@@ -52,12 +52,21 @@ class Repository(
     does not implement broker acknowledgement, worker assignment, or selection policy.
     """
 
-    def __init__(self, root: str | Path, *, artifacts=None):
-        """``artifacts`` replaces the local blob directory, e.g. with an S3ArtifactStore."""
+    def __init__(self, root: str | Path, *, artifacts=None, database=None):
+        """``artifacts`` replaces the local blob directory, e.g. with an S3ArtifactStore.
+
+        ``database`` replaces the local SQLite file with a shared ``PostgresDatabase``.
+        ``root`` remains the coordinator's local working directory either way.
+        """
         self.root = Path(root).absolute()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.database = self.root / "state.sqlite3"
         self.artifacts = ArtifactStore(self.root / "artifacts") if artifacts is None else artifacts
+        self._postgres = database
+        if database is not None:
+            self.database = database.identity
+            database.migrate()
+            return
+        self.database = self.root / "state.sqlite3"
         with self._transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0:
@@ -92,6 +101,16 @@ class Repository(
 
     @contextmanager
     def _transaction(self, *, write=True):
+        if self._postgres is not None:
+            with self._postgres.transaction(write=write) as db:
+                lease = EXECUTION_LEASE.get()
+                fenced = write and lease is not None and lease["database"] == str(self.database)
+                if fenced:
+                    self._assert_recovery_fence(db, lease)
+                yield db
+                if fenced:
+                    self._assert_recovery_fence(db, lease)
+            return
         db = sqlite3.connect(self.database, isolation_level=None, timeout=10)
         db.row_factory = sqlite3.Row
         try:

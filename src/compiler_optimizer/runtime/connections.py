@@ -74,3 +74,16 @@ def artifact_store(settings):
         prefix=settings.artifact_prefix,
         kms_key_id=settings.artifact_kms_key_id or None,
     )
+
+
+def repository_database(settings):
+    """Return the configured shared PostgreSQL database, or None for local SQLite."""
+    if not settings.database_url:
+        return None
+    from compiler_optimizer.storage.postgres import PostgresDatabase
+
+    return PostgresDatabase(
+        settings.database_url,
+        schema=settings.database_schema,
+        password=settings.database_password or None,
+    )

@@ -37,7 +37,9 @@ def until(action, processes, logs, timeout=180):
     )
 
 
-def test_independent_workers_reassign_after_process_loss_without_coordinator_docker(tmp_path):
+def test_independent_workers_reassign_after_process_loss_without_coordinator_docker(
+    tmp_path, service_database_env
+):
     token = "fleet-integration-" + "b" * 32
     state = tmp_path / "coordinator"
     repo = Repository(state)
@@ -82,7 +84,11 @@ def test_independent_workers_reassign_after_process_loss_without_coordinator_doc
         coordinator = start(
             "serve",
             "coordinator",
-            {"STATE_DIRECTORY": str(state), "PATH": "/nonexistent-no-docker"},
+            {
+                "STATE_DIRECTORY": str(state),
+                "PATH": "/nonexistent-no-docker",
+                **service_database_env(state),
+            },
         )
         with grpc.insecure_channel(endpoint) as channel:
             grpc.channel_ready_future(channel).result(timeout=15)
