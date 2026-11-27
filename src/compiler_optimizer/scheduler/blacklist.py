@@ -18,15 +18,9 @@ class RedisBlacklist:
 
     @classmethod
     def from_settings(cls, settings):
-        return cls(
-            redis.Redis(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                password=settings.redis_password,
-                socket_connect_timeout=2,
-                socket_timeout=2,
-            )
-        )
+        from compiler_optimizer.runtime.connections import redis_client
+
+        return cls(redis_client(settings))
 
     @staticmethod
     def validate(record, key, now):

@@ -15,6 +15,11 @@ from compiler_optimizer.storage.errors import ArtifactError, NotFoundError
 CHUNK = 64 * 1024
 
 
+def artifact_key(digest: str) -> str:
+    """Store-relative key shared by every artifact backend."""
+    return f"sha256/{digest[:2]}/{digest}"
+
+
 def _sync_directory(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -49,9 +54,11 @@ class ArtifactStore:
         else:
             _sync_directory(path.parent)
 
-    @staticmethod
-    def _key(digest: str) -> str:
-        return f"sha256/{digest[:2]}/{digest}"
+    _key = staticmethod(artifact_key)
+
+    def check_health(self) -> None:
+        if not stat.S_ISDIR(self.root.lstat().st_mode):
+            raise ArtifactError("artifact root is not a real directory")
 
     def _path(self, ref: pb.ArtifactRef) -> Path:
         if not re.fullmatch(r"[0-9a-f]{64}", ref.sha256) or ref.key != self._key(ref.sha256):

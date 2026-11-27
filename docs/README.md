@@ -107,3 +107,5 @@ streaming upload, task-scoped downloads and TLS/bearer authentication.
 capability registration, durable job dispatch, execution leases and cleanup.
 [AWS infrastructure](aws-infrastructure.md) covers the Terraform environments,
 `./project infra` provisioning/teardown, secrets, budgets and retention rules.
+[Cloud storage](cloud-storage.md) covers action R: the S3 artifact backend, TLS to
+Amazon MQ/ElastiCache and the remaining PostgreSQL/dispatch phases.
