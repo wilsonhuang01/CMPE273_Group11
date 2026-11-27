@@ -12,6 +12,7 @@ import grpc
 from compiler_optimizer.monitoring.events import configure_logging
 from compiler_optimizer.monitoring.metrics import Metrics
 from compiler_optimizer.runtime.config import Settings
+from compiler_optimizer.runtime.connections import artifact_store
 from compiler_optimizer.runtime.coordinator import CoordinatorService
 from compiler_optimizer.runtime.dependencies import check_coordinator, check_rabbitmq, check_redis
 from compiler_optimizer.runtime.dispatch import SubmissionDispatcher
@@ -49,7 +50,7 @@ def run(settings):
     repository = None
     dispatcher = None
     if settings.role == "coordinator":
-        repository = Repository(settings.state_directory)
+        repository = Repository(settings.state_directory, artifacts=artifact_store(settings))
         probes["storage"] = repository.check_health
         if settings.agent_backend == "rpc":
             from compiler_optimizer.agents.rpc_client import AgentClient
