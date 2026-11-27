@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -122,10 +123,13 @@ def package(destination, evidence, *, agent_states=(), images=()):
         prepared.append(path)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     try:
-        from reproduction import add_provenance
-
+        spec = importlib.util.spec_from_file_location(
+            "release_provenance", Path(__file__).with_name("reproduction.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
         with tarfile.open(temporary, "x:gz") as archive:
-            add_provenance(archive, ROOT, agent_states=agent_states, images=images)
+            module.add_provenance(archive, ROOT, agent_states=agent_states, images=images)
             for name in allowed:
                 path = ROOT / name
                 if path.exists():
@@ -178,7 +182,8 @@ def main():
         "--no-start", action="store_true", help="Reuse a running stack and built native image"
     )
     parser.add_argument("--output")
-    parser.add_argument("--trials", type=int, default=1)
+    parser.add_argument("--trials", type=int, default=3)
+    parser.add_argument("--size", type=int, default=250000)
     parser.add_argument("--evidence", action="append", default=[])
     parser.add_argument("--agent-state", action="append", default=[])
     parser.add_argument("--image", action="append", default=[])
@@ -193,7 +198,7 @@ def main():
         if args.output:
             options += ["--output", args.output]
         if args.command == "evaluate":
-            options += ["--trials", str(args.trials)]
+            options += ["--trials", str(args.trials), "--size", str(args.size)]
         command(options, env)
     elif args.command in ("serve", "scheduler", "worker"):
         env.setdefault("STATE_DIRECTORY", "var/service")

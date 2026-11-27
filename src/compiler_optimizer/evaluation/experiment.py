@@ -145,8 +145,30 @@ def evidence(repo, audit):
         for proposal in repo.list_proposals(audit["task_id"])
         for a in repo.recovery_attempts(audit["task_id"], proposal.proposal_id)
     ]
+    heldout = []
+    for item in repo.list_artifacts(audit["task_id"]):
+        if item["kind"] == "heldout-evaluation":
+            heldout.append(
+                json.loads(
+                    repo.artifacts.get(
+                        pb.ArtifactRef(
+                            **{key: item[key] for key in ("key", "sha256", "size_bytes")}
+                        )
+                    )
+                )
+            )
+    # Debate can veto a candidate before the outer experiment sees it. Preserve
+    # that failure even when the final experiment then checks the retained original.
+    heldout_failures = sum(
+        sum(not case["passed"] for case in item.get("cases", []))
+        if item.get("reason") == "heldout_output_mismatch"
+        else int(item.get("reason") == "heldout_compilation_failed")
+        for item in heldout
+    )
     return {
-        "correctness_failures": sum(
+        "heldout_evaluations": heldout,
+        "correctness_failures": heldout_failures
+        + sum(
             r.failure.reason not in (pb.INFRASTRUCTURE_ERROR, pb.UNKNOWN_FAILURE) for r in failures
         )
         + sum(

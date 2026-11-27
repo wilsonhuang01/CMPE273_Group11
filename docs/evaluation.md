@@ -28,8 +28,8 @@ The local demo demonstrates logical worker recovery on this machine, not a remot
 multi-host worker fleet.
 
 The demo/evaluation commands include startup; `--no-start` reuses a healthy stack
-and existing native image. `./project evaluate --trials 3` repeats the declared
-experiment without reusing decisions. Every run gets a new directory under `var/`.
+and existing native image. `./project evaluate --trials 3` runs the expanded Action P protocol without
+reusing decisions. Every run gets a new directory under `var/`.
 An explicit existing `--output` is rejected; failed or noisy runs remain available
 instead of silently resampling. JSON structured logs go to stderr. For example:
 
@@ -43,7 +43,99 @@ The recorded release completed **388 unit/service tests and 43 Docker tests**,
 with one native-amd64 AddressSanitizer test skipped on the ARM64 development machine.
 These counts describe the recorded release, not every future source revision.
 
-## Comparison protocol
+## Expanded comparison protocol (action P)
+
+`./project evaluate` now defaults to the expanded protocol. Run it against an
+already prepared native toolchain and healthy RabbitMQ/Redis services:
+
+```sh
+./project evaluate --no-start --trials 3 --size 250000 --output var/evaluate/my-action-p-run
+```
+
+The full protocol produces 36 configuration results plus their verification and
+measurement evidence; allow tens of minutes on Docker Desktop.
+
+The equivalent module command accepts `--target linux-aarch64` or
+`--target linux-x86_64` and `--repetitions 15`. The expanded protocol requires
+three to five trials and all three families. `--size` is the number of integers
+per benchmark input; it is bounded at one million. The original two-size
+comparison remains available through
+`python -m compiler_optimizer.evaluation evaluate --legacy --trials 1`.
+
+The fixed corpus contains C17 array reduction, C17 32-bin histogram, and C++17
+sorting with an order-sensitive checksum. Python computes expected outputs
+independently. Each family has empty, small and benchmark training cases, plus
+two held-out inputs of lengths 31 and 257 generated with separate seeds. Held-out
+inputs and expected outputs are excluded from generator requests and revision
+feedback. They are recorded in the evidence for independent reproduction.
+Each trial uses a fresh seed, baseline checkpoint and optimizer state.
+
+Four configurations run in a deterministic shuffled order for every family/trial:
+
+- **Original:** execute the unmodified reference, including one warmup, 15 measured
+  samples and the final held-out check. It generates no candidates. Reference and
+  baseline preparation costs are recorded separately from optimization cost.
+- **Single:** one Performance generator, with three isolated candidate slots.
+  C variants use 4/64/256 KiB stdio buffers. C++ variants progressively disable
+  stdio synchronization, untie input and request a stream buffer; the standard
+  library may ignore that final buffer request.
+- **Multi:** one Performance, Memory and Architecture candidate in a single
+  cohort. Memory rules stream the C computations or remove the C++ sorting copy;
+  Architecture rules unroll reduction, express the histogram bucket mask, or use
+  an explicit sorting comparator. The compiler may already implement an equivalent
+  optimization; no benefit is assumed.
+- **Debate:** one Performance generator with at most three rounds. It starts from
+  the first single-generator candidate, receives only actionable correctness or
+  review feedback, and can propose the next buffering/storage variants. Benchmark
+  noise never feeds revisions. A valid initial proposal can stop after one round;
+  unused rounds are not filled artificially.
+
+Each optimizer has the same hard cap of **three candidate slots, two workers,
+256 sandbox invocations and 1,800 reserved sandbox seconds**, including retries
+and final checks. These are equal maximum budgets, not requirements to consume
+equal work. All use the same verification, sanitizer, independent review,
+benchmark-planning and selection gates. The family alpha is .05, corrected over
+three candidate slots; benchmark alpha is .05/3. Minimum sample time, noise,
+native-execution and regression gates remain unchanged. Sandbox reservations are
+charged before invocation and persisted in each arm's cost ledger.
+
+These are frozen **deterministic rule backends**. Every configuration has an
+external-model call/token cap of zero. No credentials or paid model calls are
+needed. Results describe these rule catalogs and control flows, not language-model
+quality, learned optimization or general multi-agent superiority. Dollar cost is
+unavailable, rather than estimated as zero infrastructure cost.
+
+The protocol, candidate catalog, schedule, workload/holdout hashes and policies
+are written to `protocol.json` before probing Docker or viewing measurements.
+A digest binds the report to that declaration. The runner rejects output reuse
+and preserves partial reports on interruption/failure. After selection, every arm
+gets a final independent Python-oracle held-out check. A failure retains the
+original; it cannot select a runner-up using held-out scores. Debate also retains
+its built-in final differential check. Successful candidates are not promoted by
+this evaluator unless the coordinator's original gates have accepted them.
+
+Native x86-64 or ARM64 measurement v2 is mandatory. Original and candidate
+measurements must share image/CPU/engine/boot/execution identities. Each report
+records actual image digest and hardware identity; raw artifacts retain compiler
+flags, verification and benchmark environments. This is local single-host
+validation, with no emulated, PTX-only, GPU, cloud or physical-host claims.
+
+`report.json`, `summary.csv`, `uncertainty.csv` and `report.html` contain runtime,
+peak RSS, correctness failures, generated/verified proposals, fallback, recovery
+attempts and duration, optimization wall time, sandbox calls and model usage.
+The report includes both individual trials and equal-family means. A fixed-seed
+95% percentile bootstrap resamples whole **trial blocks**, preserving pairing
+across families/configurations; individual timing samples are not treated as
+independent experiments. With only three trials, intervals are descriptive and
+coarse. Paired multi-minus-single and debate-minus-single speedup differences are
+reported without an automatic superiority claim. Recovery duration is a lower
+bound if an interrupted attempt lacks a completion timestamp.
+
+Source code is frozen in `implementation.zip`; SQLite/CAS evidence, raw sample
+pairs, cost ledgers, audits and held-out receipts stay beside the report. The
+recorded native run is linked from [benchmark results](../benchmarks/README.md).
+
+## Legacy comparison protocol
 
 The reference is a deterministic buffered C17 integer reduction. Workloads have
 250,000 and 750,000 integers in [-1000,1000], generated with seed 160273. Expected

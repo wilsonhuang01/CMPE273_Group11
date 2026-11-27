@@ -172,6 +172,11 @@ def test_one_shot_holdout_failure_retains_baseline_without_another_revision(coho
     report = coordinator.run(task, agents=["performance"])
     assert report["status"] == "retained_baseline"
     assert report["reason"] == "heldout_evaluation_failed"
+    from compiler_optimizer.evaluation.experiment import evidence
+
+    recorded = evidence(repo, report)
+    assert recorded["correctness_failures"] == 1
+    assert recorded["heldout_evaluations"][0]["reason"] == "heldout_output_mismatch"
     assert backend.generate.call_count == 1
     assert repo.debate_run(task)["final_state"] == "completed"
     calls = list(runner.events)

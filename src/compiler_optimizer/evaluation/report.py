@@ -18,6 +18,13 @@ def rows(report):
                 "correctness_failures": 0,
                 "optimization_elapsed_seconds": 0,
                 "sandbox_invocations": 0,
+                "valid_proposals": 0,
+                "generated_proposals": 0,
+                "fallback": 0,
+                "retry_attempts": 0,
+                "recovery_seconds_lower_bound": 0,
+                "external_model_calls": 0,
+                "model_tokens": 0,
             }
         )
         for name, arm in item["arms"].items():
@@ -40,6 +47,13 @@ def rows(report):
                     "correctness_failures": arm["correctness_failures"],
                     "optimization_elapsed_seconds": arm["cost"]["optimization_elapsed_seconds"],
                     "sandbox_invocations": arm["cost"]["invocations"],
+                    "valid_proposals": arm.get("valid_proposals"),
+                    "generated_proposals": arm.get("generated_proposals"),
+                    "fallback": int(arm["status"] != "selected"),
+                    "retry_attempts": arm.get("retry_attempts"),
+                    "recovery_seconds_lower_bound": arm.get("recovery_seconds_lower_bound"),
+                    "external_model_calls": arm["cost"]["external_model_calls"],
+                    "model_tokens": 0 if report.get("schema_version") == 2 else None,
                 }
             )
     return result
@@ -60,6 +74,13 @@ def render_report(report, output):
         "correctness_failures",
         "optimization_elapsed_seconds",
         "sandbox_invocations",
+        "valid_proposals",
+        "generated_proposals",
+        "fallback",
+        "retry_attempts",
+        "recovery_seconds_lower_bound",
+        "external_model_calls",
+        "model_tokens",
     ]
     with (output / "summary.csv").open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
@@ -107,7 +128,11 @@ def render_report(report, output):
         " 8px;text-align:left;border-bottom:1px solid "
         "#ddd}p,li{line-height:1.6}small{color:#555}</style>"
     )
-    text += "<h1>Original vs single-generator vs multi-generator</h1>"
+    text += (
+        "<h1>Original vs single-generator vs multi-generator"
+        + (" vs debate" if report.get("schema_version") == 2 else "")
+        + "</h1>"
+    )
     text += (
         "<p>Native CPU evaluation · identical workloads, three candidate slots per optimizer,"
         " shared safety gates.</p>"
@@ -116,6 +141,9 @@ def render_report(report, output):
         "<p><strong>Scope:</strong> deterministic handwritten rule backends; these results do"
         " not establish LLM or general multi-agent superiority.</p>"
     )
+    if "summary" in report:
+        text += summary_html(report, output)
+    text += "<h2>Individual trials and workloads</h2>"
     text += (
         "<table><thead><tr>"
         + "".join("<th>" + h + "</th>" for h in headings)
@@ -169,3 +197,73 @@ def render_report(report, output):
     )
     (output / "report.html").write_text(text)
     return data
+
+
+def summary_html(report, output):
+    """Readable intervals plus a machine-readable table for every reported metric."""
+    columns = {
+        "speedup_ratio": ("Speedup (×)", 1),
+        "runtime_seconds": ("Runtime (ms)", 1000),
+        "peak_rss_bytes": ("Peak RSS (MiB)", 1 / 1024**2),
+        "fallback_fraction": ("Fallback (%)", 100),
+        "correctness_failures": ("Correctness failures", 1),
+        "valid_proposals": ("Valid proposals", 1),
+        "optimization_elapsed_seconds": ("Optimization (s)", 1),
+        "retry_attempts": ("Retry attempts", 1),
+        "recovery_seconds_lower_bound": ("Recovery ≥ (s)", 1),
+        "model_calls": ("Model calls", 1),
+        "model_tokens": ("Model tokens", 1),
+    }
+    flat = []
+    for group in report["summary"]["groups"]:
+        for name, values in group["metrics"].items():
+            flat.append(
+                {"family": group["family"], "strategy": group["strategy"], "metric": name, **values}
+            )
+    with (Path(output) / "uncertainty.csv").open("w", newline="") as stream:
+        writer = csv.DictWriter(
+            stream, fieldnames=["family", "strategy", "metric", "mean", "lower", "upper", "trials"]
+        )
+        writer.writeheader()
+        writer.writerows(flat)
+    text = (
+        "<h2>Trial uncertainty</h2><p>Mean [95% descriptive bootstrap interval]. "
+        "The resampling unit is the independent trial block, preserving all program families. "
+        "Three trials provide limited precision. Missing intervals are shown explicitly. "
+        "These intervals do not establish strategy superiority. "
+        '<a href="protocol.json">Frozen protocol</a> · '
+        '<a href="uncertainty.csv">All metric intervals (CSV)</a>.</p>'
+    )
+    for family in ("all_families", "reduction", "histogram", "sorting"):
+        title = "Equal-weight mean across families" if family == "all_families" else family.title()
+        if family != "all_families":
+            text += "<details><summary>" + title + "</summary>"
+        else:
+            text += "<h3>" + title + "</h3>"
+        text += '<div style="overflow-x:auto"><table><thead><tr><th>Strategy</th>'
+        text += "".join("<th>" + label + "</th>" for label, _ in columns.values())
+        text += "</tr></thead><tbody>"
+        for group in report["summary"]["groups"]:
+            if group["family"] != family:
+                continue
+            text += "<tr><td>" + html.escape(group["strategy"]) + "</td>"
+            for name, (_, scale) in columns.items():
+                value = group["metrics"][name]
+                display = f"{value['mean'] * scale:.3g}"
+                display += (
+                    " [unavailable]"
+                    if value["lower"] is None
+                    else f" [{value['lower'] * scale:.3g}, {value['upper'] * scale:.3g}]"
+                )
+                text += "<td>" + html.escape(display) + "</td>"
+            text += "</tr>"
+        text += "</tbody></table></div>"
+        if family != "all_families":
+            text += "</details>"
+    text += "<p>Paired speedup differences (trial-block intervals): "
+    for comparison in report["summary"]["paired_differences"]:
+        text += html.escape(
+            f"{comparison['comparison']}: {comparison['mean']:.3g} "
+            f"[{comparison['lower']}, {comparison['upper']}]; "
+        )
+    return text + "</p>"

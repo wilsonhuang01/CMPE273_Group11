@@ -31,8 +31,11 @@ Redis, Prometheus and Grafana. The demo exercises accepted optimization, automat
 retry on a healthy worker, crash quarantine and correctness rejection. See
 [the evaluation and packaging guide](docs/evaluation.md) for budgets, reproduction,
 raw evidence, release commands and measured limitations. The
-[recorded comparison](benchmarks/results/step16/report.html) reports actual native
-ARM64 results; handwritten candidate rules are used, with no external model calls.
+[expanded comparison](benchmarks/results/action-p/report.html) reports three
+trials across three C/C++ families and four configurations on native ARM64, with
+held-out checks, raw evidence and uncertainty. Handwritten rules use no external
+model calls. The [earlier comparison](benchmarks/results/step16/report.html) remains
+available as a separate historical result.
 
 Run `./project serve` to start a host coordinator that automatically executes
 `SubmitSubmission` requests through baseline, generation, verification, benchmarking

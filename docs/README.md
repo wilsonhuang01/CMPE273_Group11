@@ -19,12 +19,12 @@ With Python 3.11+ and Docker running:
 
 [Evaluation and release](evaluation.md) covers startup, resource budgets, result
 interpretation, failure demonstrations, testing and packaging. The
-[recorded comparison](../benchmarks/results/step16/report.html) includes actual
-native ARM64 measurements, optimization costs and recovery receipts. In one trial
-of two reduction workloads, the multi-generator arm selected a 1.057x speedup and
-80% lower peak RSS on 750,000 integers. Other comparisons retained the original.
-All four demo scenarios passed. These results do not establish general optimizer
-or multi-agent superiority.
+[expanded comparison](../benchmarks/results/action-p/report.html) includes 36
+native ARM64 results across three C/C++ families, three trials and four
+configurations, with held-out checks, costs, raw evidence and uncertainty.
+Backends are deterministic rules; results apply to the tested corpus and machine.
+The [earlier comparison](../benchmarks/results/step16/report.html) and its recovery
+demo remain available as historical evidence.
 
 ## Implemented capabilities
 

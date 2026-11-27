@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from compiler_optimizer.evaluation.demo import run_demo
+from compiler_optimizer.evaluation.expanded import run_expanded
 from compiler_optimizer.evaluation.experiment import run_evaluation
 from compiler_optimizer.evaluation.report import render_report
 from compiler_optimizer.monitoring.events import configure_logging
@@ -33,7 +34,11 @@ def main():
     parser.add_argument("mode", choices=("evaluate", "demo"))
     parser.add_argument("--output")
     parser.add_argument("--target", choices=("linux-x86_64", "linux-aarch64"))
-    parser.add_argument("--trials", type=int, default=1)
+    parser.add_argument("--trials", type=int, default=3)
+    parser.add_argument(
+        "--legacy", action="store_true", help="Run the original two-size reduction comparison"
+    )
+    parser.add_argument("--size", type=int, default=250000)
     parser.add_argument("--counts", default="250000,750000")
     parser.add_argument("--repetitions", type=int)
     args = parser.parse_args()
@@ -42,13 +47,22 @@ def main():
     suffix = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
     output = Path(args.output or f"var/{args.mode}/{suffix}")
     if args.mode == "evaluate":
-        report = run_evaluation(
-            output,
-            target=target,
-            counts=tuple(map(int, args.counts.split(","))),
-            trials=args.trials,
-            repetitions=args.repetitions or 15,
-        )
+        if args.legacy:
+            report = run_evaluation(
+                output,
+                target=target,
+                counts=tuple(map(int, args.counts.split(","))),
+                trials=args.trials,
+                repetitions=args.repetitions or 15,
+            )
+        else:
+            report = run_expanded(
+                output,
+                target=target,
+                trials=args.trials,
+                count=args.size,
+                repetitions=args.repetitions or 15,
+            )
         render_report(report, output)
     else:
         report = run_demo(output, target=target, repetitions=args.repetitions or 31)

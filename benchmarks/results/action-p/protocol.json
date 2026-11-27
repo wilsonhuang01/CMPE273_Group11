@@ -1,0 +1,211 @@
+{
+  "backends": "Frozen deterministic rules; no hosted models, calls/tokens exactly zero.",
+  "benchmark_policy": {
+    "alpha": 0.016666666666666666,
+    "cpu_id": null,
+    "maximum_memory_regression": 0.05,
+    "maximum_relative_mad": 0.1,
+    "maximum_runtime_regression": 0.05,
+    "minimum_relative_improvement": 0.05,
+    "minimum_sample_seconds": 0.01,
+    "objective": "runtime",
+    "repetitions": 15,
+    "schema_version": 2,
+    "seed": 273,
+    "warmups": 1
+  },
+  "budgets_per_optimizer_arm": {
+    "candidate_slots": 3,
+    "external_model_calls": 0,
+    "maximum_invocations": 256,
+    "maximum_reserved_sandbox_seconds": 1800,
+    "model_tokens": 0,
+    "workers": 2
+  },
+  "candidate_catalog": {
+    "debate": [
+      [
+        "performance",
+        "buffer-4096"
+      ]
+    ],
+    "multi": [
+      [
+        "performance",
+        "buffer-65536"
+      ],
+      [
+        "memory",
+        "storage"
+      ],
+      [
+        "architecture",
+        "loop"
+      ]
+    ],
+    "single": [
+      [
+        "performance",
+        "buffer-4096"
+      ],
+      [
+        "performance",
+        "buffer-65536"
+      ],
+      [
+        "performance",
+        "buffer-262144"
+      ]
+    ]
+  },
+  "holdout": "Two unseen seeded inputs, Python oracle, one final veto; no reselection.",
+  "schedule": [
+    {
+      "count": 250000,
+      "family": "reduction",
+      "heldout_sha256": "ed66092d92443f6569099705b895e3a1348dd33940ff11f97c5cdd3a3669c37b",
+      "order": [
+        "single",
+        "original",
+        "debate",
+        "multi"
+      ],
+      "package_sha256": "d844658e637a43730e3038790ae613d8af4d3d6ce849fdd42abb5cfd5c8ee73a",
+      "seed": 160373,
+      "trial": 1
+    },
+    {
+      "count": 250000,
+      "family": "histogram",
+      "heldout_sha256": "928b9d85e921130156f82bff279365518e7ecdaf86e501c128986a5dca821bd6",
+      "order": [
+        "multi",
+        "single",
+        "debate",
+        "original"
+      ],
+      "package_sha256": "fadff9a0467a0f60bd6b0b393967b8b0293a37fbc84d896eeff8de783be0da6f",
+      "seed": 160374,
+      "trial": 1
+    },
+    {
+      "count": 250000,
+      "family": "sorting",
+      "heldout_sha256": "1e2cae25821f8cda37b3e2dae3b830ee11c8b7de4a276b2df7ac019af65409d1",
+      "order": [
+        "original",
+        "single",
+        "multi",
+        "debate"
+      ],
+      "package_sha256": "e79979961f35b4858f9b9f435e74e03a4925a4be0d14bc228b21b1b4488f0350",
+      "seed": 160375,
+      "trial": 1
+    },
+    {
+      "count": 250000,
+      "family": "reduction",
+      "heldout_sha256": "31a06881cabf2321c293b91c53d4231c4ca935bcc5fe269a10135b7693930ffc",
+      "order": [
+        "debate",
+        "multi",
+        "single",
+        "original"
+      ],
+      "package_sha256": "0fbdc03c6a32ffd03ad0042db002efe211533ab630d18bd77259965fa1442007",
+      "seed": 160473,
+      "trial": 2
+    },
+    {
+      "count": 250000,
+      "family": "histogram",
+      "heldout_sha256": "cd6e5e2af2b469d60526361a65933dbbb98127e7fda79884ea09bb51b1f59b78",
+      "order": [
+        "multi",
+        "single",
+        "original",
+        "debate"
+      ],
+      "package_sha256": "d6f110858107f87282521e3a435d0516d5f2e77549e51f31c150ec3da59c6cf9",
+      "seed": 160474,
+      "trial": 2
+    },
+    {
+      "count": 250000,
+      "family": "sorting",
+      "heldout_sha256": "1891003b86d58e1e34fcae63a8a94bebeaff1ebedb6872082c7a8de4860a2e71",
+      "order": [
+        "multi",
+        "single",
+        "original",
+        "debate"
+      ],
+      "package_sha256": "369ecb20f82da736af72eabd75193dbd51f06519f388890586e7e4d9d4a9557f",
+      "seed": 160475,
+      "trial": 2
+    },
+    {
+      "count": 250000,
+      "family": "reduction",
+      "heldout_sha256": "159fef0102ccbe14201b0762b5de8bac361d69153a2de4b5a17d7b116f30e052",
+      "order": [
+        "single",
+        "original",
+        "multi",
+        "debate"
+      ],
+      "package_sha256": "a2150a389fdcdb1fba185e4ddb0b19e2095cece6365ea0c3ceef6551a4c77401",
+      "seed": 160573,
+      "trial": 3
+    },
+    {
+      "count": 250000,
+      "family": "histogram",
+      "heldout_sha256": "1f6cf498abdf00b069146f38e69a310c78c7230ec0967cc6357d0ff5fdb77aff",
+      "order": [
+        "debate",
+        "single",
+        "multi",
+        "original"
+      ],
+      "package_sha256": "c97566b798b84685095d28b54e2318a90a97bd83c4fda32834cecb57010427e4",
+      "seed": 160574,
+      "trial": 3
+    },
+    {
+      "count": 250000,
+      "family": "sorting",
+      "heldout_sha256": "0c56f7fa8d0f1d7729569397954d89e762c4b29e9325da2e8545efe6d19523db",
+      "order": [
+        "debate",
+        "single",
+        "original",
+        "multi"
+      ],
+      "package_sha256": "049155536bfdb53ad27c245c5e2ac8fab34db0c41758aeea55aaa00b0b0a2460",
+      "seed": 160575,
+      "trial": 3
+    }
+  ],
+  "schema_version": 2,
+  "selection_policy": {
+    "alpha": 0.05,
+    "maximum_candidates": 3,
+    "memory_weight": 0.5,
+    "minimum_weighted_gain": 0.01,
+    "performance_weight": 0.5,
+    "schema_version": 1,
+    "tie_digits": 6
+  },
+  "target": "linux-aarch64",
+  "trials": 3,
+  "uncertainty": "95% percentile bootstrap over trial blocks; descriptive, not superiority.",
+  "verification_policy": {
+    "comparison": {
+      "mode": "exact"
+    },
+    "generator": null,
+    "sanitizer": "undefined",
+    "schema_version": 1
+  }
+}
