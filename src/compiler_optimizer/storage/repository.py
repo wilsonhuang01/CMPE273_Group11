@@ -52,12 +52,11 @@ class Repository(
     does not implement broker acknowledgement, worker assignment, or selection policy.
     """
 
-    def __init__(self, root: str | Path, *, artifacts=None):
-        """``artifacts`` replaces the local blob directory, e.g. with an S3ArtifactStore."""
+    def __init__(self, root: str | Path):
         self.root = Path(root).absolute()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.database = self.root / "state.sqlite3"
-        self.artifacts = ArtifactStore(self.root / "artifacts") if artifacts is None else artifacts
+        self.artifacts = ArtifactStore(self.root / "artifacts")
         with self._transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version == 0:
@@ -208,7 +207,6 @@ class Repository(
         """Check the existing database without initializing or scanning task payloads."""
         with self._transaction(write=False) as db:
             db.execute("SELECT task_id FROM tasks LIMIT 1").fetchone()
-        self.artifacts.check_health()
 
     def history(self, task_id: str) -> list[dict]:
         with self._transaction(write=False) as db:

@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 import pika
 
 from compiler_optimizer.monitoring.events import emit
-from compiler_optimizer.runtime.connections import rabbitmq_parameters
 from compiler_optimizer.runtime.dependencies import DEAD_EXCHANGE, declare_topology
 from compiler_optimizer.shared.agent_roles import role_spec
 from compiler_optimizer.shared.manifest import ContractError, require
@@ -25,12 +24,19 @@ class RabbitProposalQueue:
         self.settings, self.delivery_timeout = settings, delivery_timeout
 
     def _connect(self):
+        settings = self.settings
         return pika.BlockingConnection(
-            rabbitmq_parameters(
-                self.settings,
+            pika.ConnectionParameters(
+                host=settings.rabbitmq_host,
+                port=settings.rabbitmq_port,
+                virtual_host=settings.rabbitmq_vhost,
+                credentials=pika.PlainCredentials(
+                    settings.rabbitmq_user, settings.rabbitmq_password
+                ),
                 socket_timeout=3,
                 stack_timeout=5,
                 blocked_connection_timeout=5,
+                connection_attempts=1,
                 heartbeat=30,
             )
         )
