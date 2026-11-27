@@ -156,3 +156,46 @@ resource "aws_iam_instance_profile" "worker" {
   name = "${local.name}-worker"
   role = aws_iam_role.worker.name
 }
+
+# --- Runtime secret reads (action R) ---------------------------------------------------
+# Rotating credentials are read at connect time by the running task (RABBITMQ_SECRET_ID,
+# REDIS_SECRET_ID, DATABASE_SECRET_ID), so the task role needs them too, not only the
+# execution role that injects start-up values. The EC2 worker role already has them.
+
+locals {
+  runtime_secrets = {
+    coordinator = [
+      aws_secretsmanager_secret.service["rabbitmq-password"].arn,
+      aws_secretsmanager_secret.service["redis-auth-token"].arn,
+      aws_db_instance.state.master_user_secret[0].secret_arn,
+    ]
+    scheduler = [
+      aws_secretsmanager_secret.service["rabbitmq-password"].arn,
+      aws_secretsmanager_secret.service["redis-auth-token"].arn,
+    ]
+  }
+}
+
+data "aws_iam_policy_document" "runtime_secrets" {
+  for_each = local.runtime_secrets
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = each.value
+  }
+  statement {
+    actions   = ["kms:Decrypt"]
+    resources = [aws_kms_key.secrets.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["secretsmanager.${var.region}.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "task_runtime_secrets" {
+  for_each = local.runtime_secrets
+  name     = "read-rotating-secrets"
+  role     = aws_iam_role.task[each.key].id
+  policy   = data.aws_iam_policy_document.runtime_secrets[each.key].json
+}

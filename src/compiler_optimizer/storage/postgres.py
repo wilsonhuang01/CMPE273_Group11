@@ -19,6 +19,10 @@ Unique, foreign-key and check violations raise ``ConflictError`` (as SQLite
 ``IntegrityError`` does). Connection, timeout and server errors raise ``UnavailableError``,
 which existing handlers map to gRPC ``UNAVAILABLE``. Row-level claims and fencing that
 let several coordinators commit concurrently are phase 3.
+
+With ``credentials`` (a rotating Secrets Manager view, phase 4), every new connection
+uses the current username and password, and a rejected password is re-read
+immediately, so an RDS-managed rotation never needs a coordinator restart.
 """
 
 import hashlib
@@ -31,6 +35,7 @@ from functools import lru_cache
 from importlib.resources import files
 from urllib.parse import parse_qs, urlsplit
 
+from compiler_optimizer.runtime.secrets import SecretUnavailable
 from compiler_optimizer.storage.errors import ConflictError, StateError, UnavailableError
 
 BASELINE_VERSION = 12  # postgres.sql reproduces SQLite schema version 12.
@@ -137,6 +142,13 @@ def _driver():
     return psycopg
 
 
+def _authentication_failed(error) -> bool:
+    # libpq reports connection-time failures without a SQLSTATE, so match its message too.
+    return getattr(error, "sqlstate", None) in ("28P01", "28000") or (
+        "password authentication failed" in str(error)
+    )
+
+
 def validate_schema(schema: str) -> str:
     if not _SCHEMA_NAME.fullmatch(schema) or schema.startswith("pg_"):
         raise ValueError("DATABASE_SCHEMA must be a lowercase SQL identifier")
@@ -166,6 +178,7 @@ class PostgresDatabase:
         *,
         schema: str = "optimizer",
         password: str | None = None,
+        credentials=None,
         pool_size: int = 4,
         connect_timeout: int = 5,
         lock_timeout_ms: int = 10_000,
@@ -177,7 +190,9 @@ class PostgresDatabase:
             raise ValueError("pool_size must be 0–64")
         parsed = urlsplit(url)
         self.url, self.schema = url, schema
-        self._password = password or None
+        if password and credentials is not None:
+            raise ValueError("pass a password or rotating credentials, not both")
+        self._password, self._credentials = password or None, credentials
         self.identity = (
             f"postgresql://{parsed.hostname}:{parsed.port or 5432}"
             f"/{parsed.path.strip('/')}?schema={schema}"
@@ -214,16 +229,33 @@ class PostgresDatabase:
             def quote(self, obj):
                 return self.dump(obj)
 
-        connection = psycopg.connect(
-            self.url,
-            password=self._password,
-            autocommit=True,
-            connect_timeout=self.connect_timeout,
-            cursor_factory=ClientCursor,
-            row_factory=_row_factory,
-            application_name="compiler-optimizer",
-            options=f"-c search_path={self.schema}",
-        )
+        def connect(secret):
+            login = {"password": self._password}
+            if secret is not None:
+                login = {"password": secret["password"]}
+                if secret["username"]:
+                    login["user"] = secret["username"]
+            return psycopg.connect(
+                self.url,
+                **login,
+                autocommit=True,
+                connect_timeout=self.connect_timeout,
+                cursor_factory=ClientCursor,
+                row_factory=_row_factory,
+                application_name="compiler-optimizer",
+                options=f"-c search_path={self.schema}",
+            )
+
+        if self._credentials is None:
+            connection = connect(None)
+        else:
+            try:
+                connection = connect(self._credentials.value())
+            except psycopg.OperationalError as error:
+                if not _authentication_failed(error):
+                    raise
+                # The secret rotated since it was cached; retry once with the new value.
+                connection = connect(self._credentials.refresh())
         connection.adapters.register_dumper(bool, BooleanAsInteger)
         return connection
 
@@ -286,7 +318,7 @@ class PostgresDatabase:
         psycopg = _driver()
         try:
             connection = self._begin(write)
-        except psycopg.Error as error:
+        except (psycopg.Error, SecretUnavailable) as error:
             raise UnavailableError(f"database unavailable: {self.identity}") from error
         try:
             connection.execute(f"SET LOCAL statement_timeout = {int(self.statement_timeout_ms)}")

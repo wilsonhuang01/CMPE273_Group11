@@ -108,5 +108,6 @@ capability registration, durable job dispatch, execution leases and cleanup.
 [AWS infrastructure](aws-infrastructure.md) covers the Terraform environments,
 `./project infra` provisioning/teardown, secrets, budgets and retention rules.
 [Cloud storage](cloud-storage.md) covers action R: the S3 artifact backend, the
-PostgreSQL repository, fenced dispatch claims for several coordinators and TLS to
-Amazon MQ/ElastiCache.
+PostgreSQL repository, fenced dispatch claims for several coordinators, TLS to
+Amazon MQ/ElastiCache, the managed-service Terraform, credential rotation and the
+engine validation (`./project infra validate`).

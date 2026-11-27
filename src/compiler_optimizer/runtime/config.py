@@ -21,12 +21,14 @@ class Settings:
     rabbitmq_vhost: str = "/"
     rabbitmq_tls: bool = False
     rabbitmq_ca: Path | None = None
+    rabbitmq_secret_id: str = ""
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_password: str = field(default="redis-dev-password", repr=False)
     redis_username: str | None = None
     redis_tls: bool = False
     redis_ca: Path | None = None
+    redis_secret_id: str = ""
     artifact_backend: str = "local"
     artifact_bucket: str = ""
     artifact_prefix: str = ""
@@ -36,6 +38,7 @@ class Settings:
     database_url: str = field(default="", repr=False)
     database_password: str = field(default="", repr=False)
     database_schema: str = "optimizer"
+    database_secret_id: str = ""
     dispatch_lease_seconds: int = 30
     dispatch_concurrency: int = 1
     coordinator_health_url: str = "http://localhost:18080/readyz"
@@ -154,6 +157,16 @@ class Settings:
                 raise ValueError("the PostgreSQL repository is owned by the coordinator role")
             validate_database_url(database_url)
         database_schema = validate_schema(env.get("DATABASE_SCHEMA", "optimizer"))
+        # Rotating credentials are read from Secrets Manager instead of fixed variables.
+        secret_ids = {
+            service: env.get(f"{service}_SECRET_ID", "")
+            for service in ("RABBITMQ", "REDIS", "DATABASE")
+        }
+        for service, secret_id in secret_ids.items():
+            if secret_id and env.get(f"{service}_PASSWORD"):
+                raise ValueError(f"set {service}_SECRET_ID or {service}_PASSWORD, not both")
+        if secret_ids["DATABASE"] and not database_url:
+            raise ValueError("DATABASE_SECRET_ID requires DATABASE_URL")
         dispatch_concurrency = number("DISPATCH_CONCURRENCY", 1, 8)
         if dispatch_concurrency > 1 and backend != "local":
             # Remote fleet workers are shared across tasks and hold one recovery assignment.
@@ -202,10 +215,12 @@ class Settings:
             rabbitmq_port=number("RABBITMQ_PORT", 5671 if switches["RABBITMQ_TLS"] else 5672),
             rabbitmq_tls=switches["RABBITMQ_TLS"],
             rabbitmq_ca=Path(env["RABBITMQ_CA"]) if env.get("RABBITMQ_CA") else None,
+            rabbitmq_secret_id=secret_ids["RABBITMQ"],
             redis_port=number("REDIS_PORT", 6379),
             redis_username=env.get("REDIS_USERNAME") or None,
             redis_tls=switches["REDIS_TLS"],
             redis_ca=Path(env["REDIS_CA"]) if env.get("REDIS_CA") else None,
+            redis_secret_id=secret_ids["REDIS"],
             artifact_backend=artifact_backend,
             artifact_bucket=env.get("ARTIFACT_S3_BUCKET", ""),
             artifact_prefix=env.get("ARTIFACT_S3_PREFIX", ""),
@@ -215,6 +230,7 @@ class Settings:
             database_url=database_url,
             database_password=env.get("DATABASE_PASSWORD", ""),
             database_schema=database_schema,
+            database_secret_id=secret_ids["DATABASE"],
             dispatch_lease_seconds=number("DISPATCH_LEASE_SECONDS", 30, 300),
             dispatch_concurrency=dispatch_concurrency,
             health_port=number(

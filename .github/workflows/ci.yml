@@ -41,7 +41,7 @@ jobs:
       - name: Check generated message contracts
         run: python tools/generate_contracts.py --check
       - name: Test contracts, storage, and service runtime
-        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_cloud_storage.py tests/test_postgres_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_measurement_tools.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_action_o.py tests/test_action_p.py -m "not docker" tests/test_targets.py tests/test_cuda_compile.py tests/test_action_n.py tests/test_evaluation.py tests/test_infra.py
+        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_cloud_storage.py tests/test_postgres_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_measurement_tools.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_action_o.py tests/test_action_p.py -m "not docker" tests/test_targets.py tests/test_cuda_compile.py tests/test_action_n.py tests/test_evaluation.py tests/test_infra.py tests/test_secret_rotation.py
       - name: Check C formatting
         run: clang-format --dry-run --Werror examples/sum-array/main.c examples/sum-array-optimized/main.c examples/sum-array-buffered/main.c docker/measure.c docker/perf.h examples/parallel-sum/main.cpp examples/benchmarks/sum_benchmark.cpp
       - name: Configure and build trusted example
@@ -129,7 +129,26 @@ jobs:
       - name: Install Python package with the PostgreSQL driver
         run: python -m pip install -c constraints.txt -e '.[dev,postgres]'
       - name: Run the storage-backed suite on PostgreSQL
-        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_cloud_storage.py tests/test_postgres_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_measurement_tools.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_action_o.py tests/test_action_p.py -m "not docker" tests/test_targets.py tests/test_cuda_compile.py tests/test_action_n.py tests/test_evaluation.py tests/test_infra.py
+        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_cloud_storage.py tests/test_postgres_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_measurement_tools.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_action_o.py tests/test_action_p.py -m "not docker" tests/test_targets.py tests/test_cuda_compile.py tests/test_action_n.py tests/test_evaluation.py tests/test_infra.py tests/test_secret_rotation.py
+
+  managed-engines:
+    # RabbitMQ 3.13 and Valkey 8.0 (the Amazon MQ and ElastiCache engine versions)
+    # with TLS and authentication, exercised by the same checks `infra validate` runs.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      MANAGED_ENGINE_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install Python package
+        run: python -m pip install -c constraints.txt -e '.[dev]'
+      - name: Validate broker and cache behavior on the managed engine versions
+        run: python -m pytest tests/test_managed_engines.py
 
   compose:
     runs-on: ubuntu-24.04

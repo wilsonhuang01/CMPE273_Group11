@@ -8,7 +8,7 @@ worker fleet (U) can use shared managed services. It is being delivered in phase
 | 1 | S3 artifact backend; TLS-aware RabbitMQ (Amazon MQ) and Redis (ElastiCache) clients | **Implemented** |
 | 2 | PostgreSQL repository backend (Amazon RDS) with versioned schema; SQLite stays the local default | **Implemented** |
 | 3 | Database-backed dispatch claims, leases and fencing replacing the local pipeline lock | **Implemented** |
-| 4 | Terraform for the S3 bucket, RDS, Amazon MQ and ElastiCache; broker/cache validation against the managed engines; secret rotation | Planned |
+| 4 | Terraform for the S3 bucket, RDS, Amazon MQ and ElastiCache; broker/cache validation against the managed engines; secret rotation | **Implemented** (not yet applied to an AWS account) |
 
 Local development is unchanged: with no new variables set, the coordinator uses
 SQLite plus the local content-addressed directory, and plaintext AMQP/Redis on the
@@ -179,6 +179,95 @@ fleet dispatch and the quarantine cache, are now built by `runtime/connections.p
 With TLS enabled, clients require TLS 1.2 or later, a valid certificate chain and a
 matching hostname. Certificate checks cannot be turned off; use a CA bundle instead.
 
+## Managed services, rotation and validation (phase 4)
+
+The action Q stack in [`infra/aws/environment`](../infra/aws/environment) now also
+creates the services the coordinator connects to. Everything is in the private data
+tier and accepts only TLS from the coordinator, scheduler and worker security groups.
+See [AWS infrastructure](aws-infrastructure.md) for sizes and costs per environment.
+
+| Service | Engine | Configuration |
+|---|---|---|
+| Artifacts (`storage.tf`) | S3 | SSE-KMS with the `data` key and bucket keys; public access blocked; TLS 1.2+ only. The bucket policy **refuses any object write without `If-None-Match: *`**, so artifacts can't be overwritten by any client. Versioning keeps deleted or superseded versions for `artifact_retention_days`. Production adds Object Lock (governance mode, `evidence_retention_days`). Live artifacts never expire. |
+| State (`database.tf`) | RDS for PostgreSQL 16 | `rds.force_ssl`, TLS 1.2+, storage encrypted with the `data` key, Multi-AZ and 14-day backups in production, deletion protection and a final snapshot for retained environments. |
+| Broker (`messaging.tf`) | Amazon MQ for RabbitMQ 3.13 | AMQPS only, not publicly accessible, encrypted with the `data` key. |
+| Cache (`messaging.tf`) | ElastiCache for Valkey 8.0 | TLS required, AUTH required, at-rest encryption with the `data` key. Two nodes with Multi-AZ failover in production. Durable quarantine evidence stays in the database, so losing the cache loses nothing. |
+
+The coordinator's task role can read and create objects under `artifacts/`. It can't
+delete them. The non-secret coordinator variables (`ARTIFACT_*`, `DATABASE_URL`,
+`RABBITMQ_*`, `REDIS_*` and the three secret IDs) are published as
+`data_services.coordinator_environment` in the environment configuration for the
+control plane (T) to inject. Their image must contain the RDS CA bundle at
+`/etc/ssl/certs/rds-global-bundle.pem`.
+
+### Credentials never pass through Terraform
+
+| Credential | Created by | Rotation |
+|---|---|---|
+| Database login | RDS (`manage_master_user_password`), in a secret encrypted with the `secrets` key | RDS rotates it every `database.rotation_days` (30). The password changes in place, so a rejected login makes the coordinator re-read the secret and retry once. |
+| Broker login (`rabbitmq-password`) | `./project infra up` | The `rotate-rabbitmq` function (in the VPC) uses **alternating users**. It sets a new password on whichever of `optimizer`/`optimizer-alt` is not current, through the RabbitMQ management API. The current login keeps working until the next rotation. |
+| Cache token (`redis-auth-token`) | `./project infra up` (random value, then `ROTATE` + `SET`) | The `rotate-redis` function issues `ROTATE`. ElastiCache keeps the two newest tokens, so the current token stays valid until the next rotation. |
+
+Every `rotation_days` (30), Secrets Manager invokes the rotation functions in
+[`infra/aws/lambda/rotation.py`](../infra/aws/lambda/rotation.py). A retried step is
+safe, because an applied cache token is recorded with an `APPLIED` version label and is
+not sent twice.
+
+Amazon MQ needs a first password when the broker is created, and Terraform 1.5 can't
+keep that out of state. That bootstrap password is therefore the one value in the
+(encrypted) state. `infra up` stores it in the secret and rotates twice right away, so
+it stops working before any service uses the broker. The cache is created without a
+token for the same reason, and `infra up` then enables AUTH. ElastiCache accepts
+unauthenticated clients between its `ROTATE` and `SET` steps. That window is closed
+before `up` finishes, and the secret is tagged `AuthEnforced` only after `SET`
+completes.
+
+### Rotating credentials in the services
+
+With a secret ID, a service reads the credential from Secrets Manager each time it
+opens a connection, through a 60-second per-process cache (`runtime/secrets.py`), so a
+rotation needs no restart. Open connections are unaffected. Secret outages surface as
+the usual connection errors: AMQP connection errors for the broker, `redis.ConnectionError`
+for the cache and `UnavailableError` for the database. Values never appear in logs,
+`repr` or error messages.
+
+| Variable | Meaning |
+|---|---|
+| `RABBITMQ_SECRET_ID` | Secret with `{"username", "password"}`. The username overrides `RABBITMQ_USER`. Can't be combined with `RABBITMQ_PASSWORD`. |
+| `REDIS_SECRET_ID` | Secret holding the AUTH token (or `{"username", "password"}` for RBAC). Can't be combined with `REDIS_PASSWORD`. |
+| `DATABASE_SECRET_ID` | The RDS-managed secret. Requires `DATABASE_URL`. Can't be combined with `DATABASE_PASSWORD`. |
+
+The task roles of the coordinator and scheduler can read these secrets. The worker
+instance role already could. Secret IDs need `boto3` (`pip install -e '.[aws]'`).
+
+### Validating the managed engines
+
+`python -m compiler_optimizer.runtime.service_check [broker|cache|database|artifacts]`
+runs the coordinator's own client code against whatever the environment points to:
+
+- **Broker:** the real topology (declared twice), publisher confirms, an unroutable
+  mandatory publish being returned, nack/requeue with the redelivered flag, rejection to
+  a dead-letter exchange with `x-death`, and the proposal queue's per-message TTL retry
+  queue dead-lettering back to the main exchange.
+- **Cache:** an unauthenticated client being refused, and the quarantine commands
+  through `RedisBlacklist`: `SET NX PXAT`, no overwrite and expiry.
+- **Database:** TLS, the full schema migration in a throwaway schema (dropped
+  afterwards), and an unencrypted connection being refused.
+- **Artifacts:** an S3 round trip and deduplication under `artifacts/service-check/`.
+
+The data tier can't be reached from outside the VPC. `./project infra validate --env <name>`
+therefore invokes the `service-check` Lambda function, which runs in the service
+subnets with the coordinator's security group and secrets. The launcher builds that
+package reproducibly (the wheel plus linux/arm64 drivers and the RDS CA bundle).
+
+`tests/test_managed_engines.py` runs the same checks against RabbitMQ 3.13 and Valkey 8.0
+in Docker with TLS and authentication. The CI `managed-engines` job runs it on every push.
+
+**Not yet done:** none of this has been applied to an AWS account. Read-only plans
+succeed for all three environments (150, 147 and 148 resources). Until `infra up` and
+`infra validate` run against real services, Amazon MQ's and ElastiCache's behavior is
+validated only through their engine versions, not through the managed services.
+
 ## Tests
 
 Dispatch claims are covered in `tests/test_dispatch.py`. The tests check that claims are
@@ -216,5 +305,12 @@ client that models conditional puts, checksums and error codes. It covers round 
 deduplication, corruption detection without overwrite, racing puts, size limits,
 spooling, distinct missing/integrity/outage errors, a repository committing task state
 against S3 blobs, settings validation and the TLS parameters of both clients.
-These tests do not show behavior against real AWS services. That validation is part
-of phase 4 and of action W.
+These tests do not show behavior against real AWS services.
+
+`python -m pytest tests/test_secret_rotation.py` covers both rotation strategies with
+stand-ins that enforce Secrets Manager's staging-label rules, including retried steps,
+configuration checks and stray versions. It also covers connect-time secret reads for all
+three clients, the database's single retry after a rejected password, and service-check
+reporting. `MANAGED_ENGINE_TESTS=1 python -m pytest tests/test_managed_engines.py`
+runs the service check and the broker rotation against the real RabbitMQ management API,
+and models two-token cache rotation with Valkey ACL passwords.
