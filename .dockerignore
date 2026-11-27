@@ -3,6 +3,7 @@
 !docker/
 !docker/**
 !pyproject.toml
+!constraints.txt
 !README.md
 !src/
 !src/**

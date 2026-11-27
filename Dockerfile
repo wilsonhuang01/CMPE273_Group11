@@ -1,12 +1,13 @@
-FROM python:3.11-slim-bookworm AS builder
+FROM python:3.11-slim-bookworm@sha256:ef56ae98435cc40d8a27020b0b32a9941515acd5840f0fba34858bb34dd362d1 AS builder
 # Optional extras baked into the image; "bedrock" lets agent services call Amazon Bedrock.
 ARG PACKAGE_EXTRAS=bedrock
 WORKDIR /build
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md constraints.txt ./
 COPY src/ src/
-RUN python -m pip wheel --no-cache-dir --wheel-dir /wheels ".[${PACKAGE_EXTRAS}]"
+ENV PIP_CONSTRAINT=/build/constraints.txt
+RUN python -m pip wheel --no-cache-dir --wheel-dir /wheels -c constraints.txt ".[${PACKAGE_EXTRAS}]"
 
-FROM python:3.11-slim-bookworm
+FROM python:3.11-slim-bookworm@sha256:ef56ae98435cc40d8a27020b0b32a9941515acd5840f0fba34858bb34dd362d1
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 RUN apt-get update && apt-get install --yes --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*

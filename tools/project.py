@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -62,7 +63,7 @@ def startup(env):
     )
 
 
-def package(destination, evidence):
+def package(destination, evidence, *, agent_states=(), images=()):
     """Bundle an explicit source allowlist, never credentials, git state or virtualenvs."""
     destination = Path(destination).absolute()
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -72,12 +73,14 @@ def package(destination, evidence):
         "project",
         "README.md",
         "pyproject.toml",
+        "constraints.txt",
         "MANIFEST.in",
         "Dockerfile",
         "compose.yaml",
         ".env.example",
         ".dockerignore",
         ".clang-format",
+        ".editorconfig",
         "CMakeLists.txt",
         "src",
         "docker",
@@ -120,7 +123,13 @@ def package(destination, evidence):
         prepared.append(path)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     try:
+        spec = importlib.util.spec_from_file_location(
+            "release_provenance", Path(__file__).with_name("reproduction.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
         with tarfile.open(temporary, "x:gz") as archive:
+            module.add_provenance(archive, ROOT, agent_states=agent_states, images=images)
             for name in allowed:
                 path = ROOT / name
                 if path.exists():
@@ -145,6 +154,7 @@ def package(destination, evidence):
 def main():
     if sys.argv[1:2] == ["infra"]:  # AWS environments (action Q); see docs/aws-infrastructure.md
         env = environment()
+        env["PIP_CONSTRAINT"] = str(ROOT / "constraints.txt")
         try:
             import boto3  # noqa: F401
         except ImportError:
@@ -172,10 +182,14 @@ def main():
         "--no-start", action="store_true", help="Reuse a running stack and built native image"
     )
     parser.add_argument("--output")
-    parser.add_argument("--trials", type=int, default=1)
+    parser.add_argument("--trials", type=int, default=3)
+    parser.add_argument("--size", type=int, default=250000)
     parser.add_argument("--evidence", action="append", default=[])
+    parser.add_argument("--agent-state", action="append", default=[])
+    parser.add_argument("--image", action="append", default=[])
     args = parser.parse_args()
     env = environment()
+    env["PIP_CONSTRAINT"] = str(ROOT / "constraints.txt")
     os.environ.update(env)
     if args.command in ("up", "serve", "demo", "evaluate") and not args.no_start:
         startup(env)
@@ -184,7 +198,7 @@ def main():
         if args.output:
             options += ["--output", args.output]
         if args.command == "evaluate":
-            options += ["--trials", str(args.trials)]
+            options += ["--trials", str(args.trials), "--size", str(args.size)]
         command(options, env)
     elif args.command in ("serve", "scheduler", "worker"):
         env.setdefault("STATE_DIRECTORY", "var/service")
@@ -207,12 +221,19 @@ def main():
         command([sys.executable, "tools/check_stack.py"], env)
         command([sys.executable, "tools/check_observability.py"], env)
     elif args.command in ("test", "package"):
-        command([sys.executable, "-m", "pip", "install", "-e", ".[dev]"], env)
+        command(
+            [sys.executable, "-m", "pip", "install", "-c", "constraints.txt", "-e", ".[dev]"], env
+        )
         if args.command == "test":
             command([sys.executable, "-m", "pytest", "-q", "-m", "not docker"], env)
         else:
             command([sys.executable, "-m", "build"], env)
-            path = package(args.output or "dist/compiler-optimizer-demo.tar.gz", args.evidence)
+            path = package(
+                args.output or "dist/compiler-optimizer-demo.tar.gz",
+                args.evidence,
+                agent_states=args.agent_state,
+                images=args.image,
+            )
             print("PACKAGED: " + str(path))
 
 

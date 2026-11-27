@@ -54,6 +54,7 @@ run(coordinator, task)
     repo = Repository(root / "state")
     runner = DockerRunner(
         os.environ.get("COMPILER_IMAGE", "cmpe273-clang:18"),
+        target=os.environ.get("WORKER_TARGET", "linux-x86_64"),
         watchdog_directory=root / "replacement-watchdogs",
     )
     settings = Settings.from_env("coordinator")

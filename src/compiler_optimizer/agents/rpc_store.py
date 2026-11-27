@@ -42,6 +42,10 @@ class AgentStore:
                 "request_sha256 TEXT,state TEXT,attempts INTEGER,response BLOB,error TEXT,"
                 "PRIMARY KEY(task_id,operation))"
             )
+            columns = {r[1] for r in db.execute("PRAGMA table_info(operations)")}
+            for column in ("started_ms", "finished_ms"):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE operations ADD COLUMN {column} INTEGER")
             db.execute(
                 "UPDATE operations SET state='failed',error='owner_restart' WHERE state='running'"
             )
@@ -125,19 +129,33 @@ class AgentStore:
                     raise StateError("agent operation is already running")
                 require(row["attempts"] < maximum, "agent operation attempt budget exhausted")
             db.execute(
-                "INSERT INTO operations VALUES(?,?,?,'running',1,NULL,NULL) "
+                "INSERT INTO operations(task_id,operation,request_sha256,state,attempts,"
+                "response,error) "
+                "VALUES(?,?,?,'running',1,NULL,NULL) "
                 "ON CONFLICT(task_id,operation) DO UPDATE SET state='running', "
                 "attempts=operations.attempts+1,error=NULL",
                 (task_id, operation, digest),
+            )
+            db.execute(
+                "UPDATE operations SET started_ms=?,finished_ms=NULL "
+                "WHERE task_id=? AND operation=?",
+                (time.time_ns() // 1_000_000, task_id, operation),
             )
         return None
 
     def finish(self, task_id, operation, *, response=None, error=None):
         with self.transaction() as db:
             db.execute(
-                "UPDATE operations SET state=?,response=?,error=? "
+                "UPDATE operations SET state=?,response=?,error=?,finished_ms=? "
                 "WHERE task_id=? AND operation=? AND state='running'",
-                ("completed" if error is None else "failed", response, error, task_id, operation),
+                (
+                    "completed" if error is None else "failed",
+                    response,
+                    error,
+                    time.time_ns() // 1_000_000,
+                    task_id,
+                    operation,
+                ),
             )
 
     def reserve_model_call(self, task_id, role, purpose, backend, prompt, *, max_calls, max_tokens):

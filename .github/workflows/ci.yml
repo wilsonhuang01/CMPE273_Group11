@@ -7,6 +7,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PIP_CONSTRAINT: ${{ github.workspace }}/constraints.txt
+
 jobs:
   checks:
     runs-on: ubuntu-24.04
@@ -30,7 +33,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes clang-18 libomp-18-dev libbenchmark-dev
       - name: Install Python package and development tools
-        run: python -m pip install -e '.[dev]'
+        run: python -m pip install -c constraints.txt -e '.[dev]'
       - name: Check Python formatting and lint
         run: |
           ruff check .
@@ -38,7 +41,7 @@ jobs:
       - name: Check generated message contracts
         run: python tools/generate_contracts.py --check
       - name: Test contracts, storage, and service runtime
-        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_measurement_tools.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_targets.py tests/test_cuda_compile.py tests/test_action_n.py tests/test_evaluation.py tests/test_infra.py
+        run: python -m pytest tests/test_contracts.py tests/test_storage.py tests/test_runtime.py tests/test_dispatch.py tests/test_transfer.py tests/test_fleet.py tests/test_baseline.py tests/test_sandbox.py tests/test_domains.py tests/test_measurement_tools.py tests/test_verification.py tests/test_benchmark.py tests/test_pipeline.py tests/test_agents.py tests/test_selection.py tests/test_recovery.py tests/test_execution_entrypoints.py tests/test_concurrency.py tests/test_agent_rpc.py tests/test_model_adapter.py tests/test_transformations.py tests/test_llvm_ir.py tests/test_debate.py tests/test_observability.py tests/test_action_o.py tests/test_action_p.py -m "not docker" tests/test_targets.py tests/test_cuda_compile.py tests/test_action_n.py tests/test_evaluation.py tests/test_infra.py
       - name: Check C formatting
         run: clang-format --dry-run --Werror examples/sum-array/main.c examples/sum-array-optimized/main.c examples/sum-array-buffered/main.c docker/measure.c docker/perf.h examples/parallel-sum/main.cpp examples/benchmarks/sum_benchmark.cpp
       - name: Configure and build trusted example
@@ -56,6 +59,26 @@ jobs:
           python -c 'import compiler_optimizer.coordinator, compiler_optimizer.agents, compiler_optimizer.scheduler, compiler_optimizer.workers, compiler_optimizer.monitoring, compiler_optimizer.shared'
           python -c 'from compiler_optimizer.shared.manifest import parse_manifest; from compiler_optimizer.shared.v1 import contracts_pb2_grpc'
           python -c 'import tempfile; from compiler_optimizer.storage import Repository; temporary = tempfile.TemporaryDirectory(); assert Repository(temporary.name).list_tasks() == []; temporary.cleanup()'
+
+  clean-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install native test prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-18 libomp-18-dev libbenchmark-dev
+      - name: Package tracked source and reproduce outside checkout
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: |
+          python tools/project.py package --output /tmp/optimizer-source.tar.gz
+          python tools/reproduction.py --check /tmp/optimizer-source.tar.gz
 
   infrastructure:
     # Static checks only: no AWS credentials are available or needed here.
@@ -98,7 +121,7 @@ jobs:
           docker compose --profile riscv build compiler-riscv
           docker compose --profile cuda-compile build compiler-cuda
       - name: Install baseline integration test dependencies
-        run: python -m pip install -e . pytest
+        run: python -m pip install -c constraints.txt -e . pytest
       - name: Test real containerized C/C++ baseline execution
         env:
           BASELINE_DOCKER_TESTS: "1"
@@ -112,7 +135,7 @@ jobs:
           DEBATE_INTEGRATION_TESTS: "1"
           TRANSFORMATION_INTEGRATION_TESTS: "1"
           LLVM_INTEGRATION_TESTS: "1"
-        run: python -m pytest --basetemp="${RUNNER_TEMP}/compiler-optimizer-tests" tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_dispatch_docker.py tests/test_transfer_docker.py tests/test_fleet_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_concurrency_docker.py tests/test_agent_rpc_docker.py tests/test_debate_docker.py tests/test_transformations_docker.py tests/test_llvm_ir_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py
+        run: python -m pytest --basetemp="${RUNNER_TEMP}/compiler-optimizer-tests" tests/test_baseline_docker.py tests/test_watchdog_docker.py tests/test_verification_docker.py tests/test_benchmark_docker.py tests/test_pipeline_docker.py tests/test_dispatch_docker.py tests/test_transfer_docker.py tests/test_fleet_docker.py tests/test_agents_docker.py tests/test_selection_docker.py tests/test_recovery_docker.py tests/test_concurrency_docker.py tests/test_agent_rpc_docker.py tests/test_debate_docker.py tests/test_transformations_docker.py tests/test_llvm_ir_docker.py tests/test_failure_injection_docker.py tests/test_riscv_docker.py tests/test_cuda_compile_docker.py tests/test_evaluation_docker.py tests/test_action_p.py -m docker
       - name: Test Action L correctness domains and coverage-guided fuzzing
         env:
           BASELINE_DOCKER_TESTS: "1"

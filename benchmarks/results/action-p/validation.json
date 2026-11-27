@@ -1,0 +1,16 @@
+{
+  "complete_configurations": 36,
+  "correctness_failures": 0,
+  "final_heldout_failures": 0,
+  "generated_proposals": 63,
+  "independent_trials": 3,
+  "lint_format_contracts_passed": true,
+  "maximum_observed_reserved_seconds": 724,
+  "maximum_observed_sandbox_calls": 162,
+  "native_docker_corpus_tests_passed": 3,
+  "program_families": 3,
+  "retry_attempts": 0,
+  "source_snapshot_and_provenance_verified": true,
+  "unit_service_tests_passed": 696,
+  "verified_proposals": 63
+}

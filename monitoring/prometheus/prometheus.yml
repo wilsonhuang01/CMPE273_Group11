@@ -9,6 +9,9 @@ scrape_configs:
   - job_name: optimizer-services
     static_configs:
       - targets: [coordinator:8080, scheduler:8080, worker:8080]
+  - job_name: optimizer-agents
+    static_configs:
+      - targets: [agent-performance:8080, agent-memory:8080, agent-correctness:8080, agent-architecture:8080, agent-critic:8080, agent-benchmark:8080]
   - job_name: optimizer-host
     static_configs:
       - targets: [host.docker.internal:18083]

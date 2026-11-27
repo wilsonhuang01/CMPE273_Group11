@@ -67,6 +67,23 @@ class RepositoryCollector:
                     "ON j.policy_key=a.key"
                 )
             }
+        from compiler_optimizer.monitoring.stages import coordinator_metrics
+
+        yield from coordinator_metrics(repo)
+        yield histogram(
+            "execution_attempt_duration_seconds",
+            "Finished leased execution attempts including retries.",
+            ["status"],
+            {
+                (status,): [
+                    max(0, a["finished_ms"] - a["started_ms"]) / 1000
+                    for a in attempts
+                    if a["status"] == status and a["finished_ms"] is not None
+                ]
+                for status in {a["status"] for a in attempts}
+            },
+            [0.1, 1, 5, 30, 120, 600],
+        )
         task_counts = Counter(
             {(state,): 0 for state in ("accepted", "running", "completed", "failed")}
         )
@@ -271,14 +288,19 @@ class RepositoryCollector:
 
 
 class Metrics:
-    def __init__(self, *, repository=None, readiness=None):
+    def __init__(self, *, repository=None, readiness=None, agent_store=None):
         self.repository, self.readiness = repository, readiness
+        self.agent_store = agent_store
         self.collector = RepositoryCollector(repository) if repository is not None else None
 
     def render(self):
         registry = CollectorRegistry()
         if self.collector is not None:
             registry.register(self.collector)
+        if self.agent_store is not None:
+            from compiler_optimizer.monitoring.stages import AgentCollector
+
+            registry.register(AgentCollector(self.agent_store))
         if self.readiness is not None:
             snapshot = self.readiness.snapshot()
             gauges = GaugeMetricFamily(

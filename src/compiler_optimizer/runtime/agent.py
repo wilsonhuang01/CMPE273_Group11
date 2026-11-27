@@ -104,7 +104,13 @@ def run_agent(settings):
         interval=settings.probe_interval_seconds,
         capabilities=["agent_rpc_v1"],
     )
-    health = health_server((settings.health_host, settings.health_port), state)
+    from compiler_optimizer.monitoring.metrics import Metrics
+
+    health = health_server(
+        (settings.health_host, settings.health_port),
+        state,
+        metrics=Metrics(agent_store=service.store, readiness=state),
+    )
     threads = [
         threading.Thread(target=health.serve_forever, daemon=True),
         threading.Thread(target=state.run, args=(stop,), daemon=True),
