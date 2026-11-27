@@ -15,6 +15,23 @@ There is no unconfined execution option. Docker Desktop on ARM can emulate the
 x86-64 image: Docker installs the syscall profile for its native Linux kernel,
 rather than relying on unsupported guest-process filter installation.
 
+## Runtime startup and execution budgets
+
+Containers start with a 64-task PID budget so runc can create its temporary
+runtime threads while installing the syscall filter. Very small startup limits
+can abort runc with `pthread_create failed` before the Python supervisor starts.
+This is infrastructure failure, not a submitted-program crash.
+
+The trusted supervisor announces `compiler-optimizer-ready-v1` before reading its
+request. The host then updates the PID budget to the execution profile's original
+limit and re-inspects the complete Docker policy before releasing any workload
+bytes. Compilation remains at 64. Missing handshakes, failed updates or policy
+mismatches fail closed and remove the container. Startup remains covered by the
+external watchdog. The trusted benchmark-environment probe executes no submitted
+code and keeps the 64-task startup budget. Rebuild compiler images after this
+protocol change; older supervisors fail the handshake rather than running with
+an unverified execution budget.
+
 ## Enforced policy
 
 `workers/policy.py` defines policy version 1 and a SHA-256 fingerprint of its

@@ -39,7 +39,7 @@ def mock_guard(monkeypatch, runner, command, directory):
     monkeypatch.setattr(
         runner,
         "_attach",
-        lambda name, payload, guard, wall_seconds: (
+        lambda name, payload, guard, wall_seconds, **kwargs: (
             command(["start", "--attach", name], timeout=wall_seconds + 5),
             None,
         ),
@@ -250,7 +250,7 @@ def test_docker_adapter_bounds_resources_and_cleans_up(
     assert "--read-only" in create and "--security-opt" in create
     assert create[create.index("--memory") + 1] == "256m"
     assert create[create.index("--memory-swap") + 1] == "256m"
-    assert create[create.index("--pids-limit") + 1] == ("8" if fuzz_mode else "2")
+    assert create[create.index("--pids-limit") + 1] == "64"
     assert "--volume" not in create and "--mount" not in create
     assert not any(arg.startswith(("/work/src:", "/work/build:")) for arg in create)
     assert any(arg.startswith("/work/run:rw,exec,") for arg in create)
@@ -334,3 +334,45 @@ def test_success_is_rejected_when_watchdog_cannot_confirm_cleanup(monkeypatch, t
     guard.finish = failed_cleanup
     with pytest.raises(InfrastructureError, match="cleanup unconfirmed"):
         runner._invoke({"wall_seconds": 2, "output_bytes": 1024}, memory=256, compile_mode=False)
+
+
+@pytest.mark.parametrize("valid_execution_policy", [True, False])
+def test_startup_gate_restores_execution_pid_limit_before_payload(
+    monkeypatch, tmp_path, valid_execution_policy
+):
+    runner = object.__new__(DockerRunner)
+    runner.hardware = json.dumps({"docker_engine": {"cpus": 4, "memory_bytes": 4 * 1024**3}})
+    runner._admission_engine = str(tmp_path)
+    runner.image = "sha256:" + "a" * 64
+    runner.target, runner.platform = "linux-x86_64", "linux/amd64"
+    runner.measurement_version = 2
+    calls = []
+
+    def command(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, b"{}", b"")
+
+    monkeypatch.setattr(runner, "_command", command)
+    mock_guard(monkeypatch, runner, command, tmp_path)
+    validations = []
+
+    def validate(*args, **kwargs):
+        validations.append(kwargs.get("startup", False))
+        if not kwargs.get("startup") and not valid_execution_policy:
+            raise InfrastructureError("execution policy not restored")
+
+    def attach(name, payload, guard, *, wall_seconds, on_ready):
+        assert validations == [True]
+        on_ready()
+        assert validations == [True, False]
+        assert calls[-1] == ["update", "--pids-limit", "3", name]
+        raise InfrastructureError("payload release reached")
+
+    monkeypatch.setattr(runner, "_validate_container", validate)
+    monkeypatch.setattr(runner, "_attach", attach)
+    message = (
+        "payload release reached" if valid_execution_policy else "execution policy not restored"
+    )
+    with pytest.raises(InfrastructureError, match=message):
+        runner._invoke({"wall_seconds": 2, "output_bytes": 1024}, memory=256, compile_mode=False)
+    assert calls[-1][:2] == ["rm", "--force"]

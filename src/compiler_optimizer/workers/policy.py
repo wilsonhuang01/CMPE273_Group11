@@ -142,6 +142,7 @@ def validate_host_config(
     perf=False,
     harness=False,
     cpu_ids=None,
+    startup=False,
 ) -> None:
     """Fail closed if Docker's effective create settings weaken the required policy."""
     required = {
@@ -152,7 +153,7 @@ def validate_host_config(
         "MemorySwap": memory * 1024**2,
         "NanoCpus": (2 if parallel and not compile_mode else 1) * 1_000_000_000,
         "PidsLimit": 64
-        if compile_mode
+        if compile_mode or startup
         else 6
         if harness
         else 4
