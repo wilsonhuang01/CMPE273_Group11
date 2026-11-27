@@ -33,7 +33,10 @@ from urllib.parse import parse_qs, urlsplit
 
 from compiler_optimizer.storage.errors import ConflictError, StateError, UnavailableError
 
-SCHEMA_VERSION = 12
+BASELINE_VERSION = 12  # postgres.sql reproduces SQLite schema version 12.
+# Each later version is one SQL file, applied in order inside the migration transaction.
+MIGRATIONS = {13: "postgres_dispatch.sql"}
+SCHEMA_VERSION = max(MIGRATIONS)
 _INSERT_OR_IGNORE = re.compile(r"^\s*INSERT\s+OR\s+IGNORE\s+INTO\b", re.IGNORECASE)
 _SCHEMA_NAME = re.compile(r"[a-z_][a-z0-9_]{0,62}")
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
@@ -324,18 +327,20 @@ class PostgresDatabase:
                 "version BIGINT PRIMARY KEY, applied_at_unix_ms BIGINT NOT NULL)"
             )
             version = db.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-            if version is None:
-                schema = files("compiler_optimizer.storage").joinpath("postgres.sql").read_text()
-                for statement in schema.split(";"):
+            if version is not None and version not in (BASELINE_VERSION, *MIGRATIONS):
+                raise StateError(f"unsupported database schema version: {version}")
+            steps = [] if version is not None else [(BASELINE_VERSION, "postgres.sql")]
+            steps += sorted(item for item in MIGRATIONS.items() if item[0] > (version or 0))
+            for target, name in steps:
+                script = files("compiler_optimizer.storage").joinpath(name).read_text()
+                for statement in script.split(";"):
                     if statement.strip():
                         db.execute(statement)
                 db.execute(
                     "INSERT INTO schema_version VALUES (?, ?)",
-                    (SCHEMA_VERSION, time.time_ns() // 1_000_000),
+                    (target, time.time_ns() // 1_000_000),
                 )
-                version = SCHEMA_VERSION
-            if version != SCHEMA_VERSION:
-                raise StateError(f"unsupported database schema version: {version}")
+                version = target
         return version
 
     def check(self) -> None:

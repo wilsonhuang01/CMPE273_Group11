@@ -51,9 +51,10 @@ failures; they do not bypass selection or invent proposals. Operator-controlled
 `workflow_configuration` on `CoordinatorService` can select a smaller cohort or
 explicit validated plans before intake. Clients cannot alter policies in the RPC.
 
-The dispatcher polls durable pending rows once per second and holds the existing
-local pipeline lock across baseline and cohort work. It preserves the submitted
-task ID. After a restart, it confirms cleanup of that task's owned sandbox
+The dispatcher polls durable pending rows once per second and runs each task under
+an expiring database claim, renewed while it works and checked by every write
+([dispatch claims](cloud-storage.md#dispatch-claims-and-fencing-phase-3)). It preserves
+the submitted task ID. After a restart, it confirms cleanup of that task's owned sandbox
 containers, reuses a committed successful baseline and resumes the frozen cohort,
 agent journal, recovery leases and final audit. Completed/noisy benchmark batches
 cannot be resampled. An interrupted baseline starts a new job attempt; it never

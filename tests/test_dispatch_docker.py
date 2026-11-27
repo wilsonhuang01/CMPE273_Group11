@@ -71,6 +71,7 @@ def test_submission_resumes_after_actual_coordinator_process_loss(tmp_path, serv
         HEALTH_HOST="127.0.0.1",
         GRPC_HOST="127.0.0.1",
         EXECUTION_ENABLED="true",
+        DISPATCH_LEASE_SECONDS="5",
         **service_database_env(repo.root),
     )
     log = tmp_path / "coordinator.log"
@@ -138,6 +139,8 @@ def test_submission_resumes_after_actual_coordinator_process_loss(tmp_path, serv
                 result = client.GetOptimizationResult(pb.OptimizationQuery(task_id=task), timeout=5)
                 assert result.status == "completed", result.report_json
                 assert result.stage == "completed"
+                # The killed coordinator could not release its claim: the restart took it over.
+                assert '"event": "dispatch_takeover"' in log.read_text()
                 assert result.selected_source.bundle.sha256
                 assert repo.get_execution(task)["attempts"] == 2
                 assert len(repo.list_tasks()) == 1
@@ -171,5 +174,83 @@ def test_submission_resumes_after_actual_coordinator_process_loss(tmp_path, serv
         if process is not None and process.poll() is None:
             process.kill()
             process.wait(timeout=10)
+        for path in (repo.root / "submission-watchdogs").glob("*/*/lease.json"):
+            remove_owned(read_json(path))
+
+
+def test_standby_replica_takes_over_when_the_owning_coordinator_is_killed(
+    tmp_path, service_database_env
+):
+    """Two live coordinators compete for one task; killing its owner hands it over."""
+    repo = Repository(tmp_path / "state")
+    package = read_package(ROOT / "examples/sum-array")
+    target = native_target()
+    compiler = DockerRunner(DEFAULT_IMAGES[target], target=target).compiler(
+        package.manifest.language
+    )
+    request = pb.Submission(
+        meta=metadata(str(uuid4())),
+        manifest=package.manifest,
+        package=repo.artifacts.put(package.package_bundle),
+        source=pb.SourceVersion(version=1, bundle=repo.artifacts.put(package.source_bundle)),
+        compiler=compiler,
+    )
+    task = request.meta.task_id
+    replicas = {}
+    try:
+        for name in ("a", "b"):
+            port = free_port()
+            log = tmp_path / f"coordinator-{name}.log"
+            env = dict(
+                os.environ,
+                STATE_DIRECTORY=str(repo.root),
+                GRPC_PORT=str(port),
+                HEALTH_PORT=str(free_port()),
+                HEALTH_HOST="127.0.0.1",
+                GRPC_HOST="127.0.0.1",
+                EXECUTION_ENABLED="true",
+                DISPATCH_LEASE_SECONDS="5",
+                **service_database_env(repo.root),
+            )
+            process = subprocess.Popen(
+                [sys.executable, str(ROOT / "tools/project.py"), "serve", "--no-start"],
+                cwd=ROOT,
+                env=env,
+                stdout=log.open("w"),
+                stderr=subprocess.STDOUT,
+            )
+            replicas[name] = (process, log, port)
+            with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+                grpc.channel_ready_future(channel).result(timeout=15)
+        with grpc.insecure_channel(f"127.0.0.1:{replicas['a'][2]}") as channel:
+            rpc.CoordinatorServiceStub(channel).SubmitSubmission(request, timeout=10)
+        process_a, log_a, _ = replicas["a"]
+        # Wait until one replica owns the task and has committed real work under its claim.
+        wait_for(
+            lambda: (
+                repo.dispatch_claims()
+                and any(row["status"] == "completed" for row in repo.list_agent_iterations(task))
+            ),
+            process_a,
+            log_a,
+        )
+        owner_pid = int(repo.dispatch_claims()[0]["owner_id"].split(":")[1])
+        owner = next(name for name, (p, _, _) in replicas.items() if p.pid == owner_pid)
+        standby = "b" if owner == "a" else "a"
+        replicas[owner][0].kill()
+        replicas[owner][0].wait(timeout=10)
+        process, log, _ = replicas[standby]
+        wait_for(lambda: repo.get_execution(task)["finished"], process, log)
+        assert repo.get_task(task)["status"] == "completed"
+        assert '"event": "dispatch_takeover"' in log.read_text()
+        claims = repo.dispatch_claims()
+        assert len(claims) == 1 and claims[0]["fence"] == 2
+        assert claims[0]["owner_id"].split(":")[1] == str(process.pid)
+        assert repo.get_decision(task) is not None
+    finally:
+        for process, _, _ in replicas.values():
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
         for path in (repo.root / "submission-watchdogs").glob("*/*/lease.json"):
             remove_owned(read_json(path))

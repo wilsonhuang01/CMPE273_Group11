@@ -17,6 +17,10 @@ class StateError(StorageError):
     """An operation is invalid in the current task state."""
 
 
+class ClaimLost(StateError):
+    """This coordinator's dispatch claim expired or was taken over; it may not write."""
+
+
 class ArtifactError(StorageError):
     """An artifact is unsafe, oversized, or fails integrity verification."""
 

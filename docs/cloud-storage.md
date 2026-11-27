@@ -7,7 +7,7 @@ worker fleet (U) can use shared managed services. It is being delivered in phase
 |---|---|---|
 | 1 | S3 artifact backend; TLS-aware RabbitMQ (Amazon MQ) and Redis (ElastiCache) clients | **Implemented** |
 | 2 | PostgreSQL repository backend (Amazon RDS) with versioned schema; SQLite stays the local default | **Implemented** |
-| 3 | Database-backed dispatch claims, leases and fencing replacing the local pipeline lock | Planned |
+| 3 | Database-backed dispatch claims, leases and fencing replacing the local pipeline lock | **Implemented** |
 | 4 | Terraform for the S3 bucket, RDS, Amazon MQ and ElastiCache; broker/cache validation against the managed engines; secret rotation | Planned |
 
 Local development is unchanged: with no new variables set, the coordinator uses
@@ -92,19 +92,66 @@ With `DATABASE_URL` set, the coordinator keeps all task state in PostgreSQL inst
   restart or RDS failover has closed a pooled connection, the next transaction replaces
   it before running anything, so callers don't see the dead connection. Connections are
   never shared across `fork`.
-- **Versioned schema.** On first start, the repository creates the schema and records
-  version 12 in `schema_version`, under the same lock, so concurrent starts are safe.
-  An unknown version is rejected without changing any data. Schema changes after
-  version 12 must be added as transactional steps for both engines. There is no
-  automatic downgrade.
+- **Versioned schema.** On first start, the repository creates the version 12 baseline
+  and applies each later migration (`MIGRATIONS` in `storage/postgres.py`) in the same
+  transaction and under the same lock, so concurrent starts are safe. Each applied
+  version is recorded in `schema_version`, and existing databases upgrade in place (12 → 13
+  adds dispatch claims). An unknown version is rejected without changing any data.
+  There is no automatic downgrade.
 - **Fencing unchanged.** Execution-lease fences use the database identity (host, port,
   database and schema, never credentials), so leases behave as with SQLite.
 
 Phase 2 makes state durable and shared, so a replacement coordinator on another host
-resumes every task, attempt count and decision. It does **not** yet make concurrent
-coordinators safe. Automatic execution is still guarded by the local `pipeline.lock` in
-`STATE_DIRECTORY`, so run **one** coordinator per database schema until phase 3 adds
-database-backed claims and fencing.
+resumes every task, attempt count and decision. Phase 3 (below) makes it safe to run
+several coordinators against the same database at once.
+
+## Dispatch claims and fencing (phase 3)
+
+Coordinators no longer rely on the local `pipeline.lock` to decide who runs a task.
+Schema version 13 adds `dispatch_claims`, and each dispatcher works like this:
+
+1. **Claim.** In one serialized write transaction, take the oldest due, unclaimed task for
+   this execution backend. A claim is a random token, an owner ID
+   (`host:pid:random`), an expiry and a **fence** that increases on every new claim. A
+   task with a live claim can't be claimed by anyone else.
+2. **Renew.** While the task runs, a background thread extends the lease every third
+   of `DISPATCH_LEASE_SECONDS`. If renewal finds the claim gone, the task's work is told
+   to stop.
+3. **Fence every write.** The claim is attached to the execution context, including the
+   cohort's worker threads. Every repository write in that context first checks, inside
+   its own transaction, that the claim is still this coordinator's and has not expired.
+   If not, the write raises `ClaimLost` and commits nothing. A stalled or partitioned
+   coordinator therefore can't record late results, attempts or decisions once a
+   replacement has taken over.
+4. **Release or expire.** A finished, failed or interrupted dispatch releases its claim.
+   The fence is kept, so later owners continue the sequence. A coordinator that dies
+   without releasing leaves a claim that expires after the lease. Any other
+   coordinator, or the same one after a restart, then takes it over (`dispatch_takeover`
+   event, next fence), confirms cleanup of the previous owner's sandboxes and resumes
+   from committed checkpoints.
+
+Lease times use the database clock on PostgreSQL, so clock skew between coordinator hosts
+cannot shorten or extend a lease. Claim events (`dispatch_claimed`, `dispatch_takeover`,
+`dispatch_claim_lost`, `dispatch_renew_failed`) are structured log events with the
+task, owner and fence.
+
+| Variable | Meaning |
+|---|---|
+| `DISPATCH_LEASE_SECONDS` | Claim lease (default 30, at most 300). A crashed coordinator's task resumes after at most this long. |
+| `DISPATCH_CONCURRENCY` | Maximum live claims across **all** coordinators sharing the database (default 1). Above 1 requires `EXECUTION_BACKEND=local`. |
+
+With the default concurrency of 1, extra coordinators are **hot standbys**: exactly one
+task runs at a time across the deployment, as before, and a standby takes over within
+one lease if the active coordinator fails. Raising the limit lets coordinators with
+their own local Docker engines run different tasks in parallel. It is refused for the
+remote backend because fleet workers are shared across tasks and each holds one
+recovery assignment, so parallel tasks would contend for the same workers. Lifting that
+needs task-scoped worker assignment, which is outside action R.
+
+Each coordinator runs one dispatcher. Standalone CLIs (`./project optimize`, pipeline
+and evaluation commands) still take `pipeline.lock` exclusively, and dispatchers take it
+shared, so a running CLI and a dispatcher on the same state directory still exclude each
+other.
 
 | Variable | Meaning |
 |---|---|
@@ -133,6 +180,16 @@ With TLS enabled, clients require TLS 1.2 or later, a valid certificate chain an
 matching hostname. Certificate checks cannot be turned off; use a CA bundle instead.
 
 ## Tests
+
+Dispatch claims are covered in `tests/test_dispatch.py`. The tests check that claims are
+exclusive, that a takeover after expiry fences the previous owner's writes and stale
+releases, that released claims keep their fence, that backends stay separate, and that
+the cross-coordinator cap holds. A standby takes over an abandoned task and completes it,
+a lease is renewed through work longer than itself, and a coordinator whose claim is
+replaced stops without recording an outcome. `tests/test_dispatch_docker.py` runs real
+`./project serve` processes. A killed coordinator's restart takes over its expired claim,
+and with two live replicas, killing whichever owns the task hands it to the other, which
+completes it with fence 2.
 
 `python -m pytest tests/test_postgres_storage.py` checks SQL translation, rows and
 configuration offline. With a server, `--postgres-url` (or `TEST_POSTGRES_URL`) adds

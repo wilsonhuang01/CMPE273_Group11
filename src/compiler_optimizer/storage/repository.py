@@ -15,7 +15,7 @@ from compiler_optimizer.shared.contracts import (
     validate_result_for_job,
 )
 from compiler_optimizer.shared.correctness import validate_evidence
-from compiler_optimizer.shared.lease_context import EXECUTION_LEASE
+from compiler_optimizer.shared.lease_context import DISPATCH_CLAIM, EXECUTION_LEASE
 from compiler_optimizer.shared.manifest import require
 from compiler_optimizer.shared.messaging import decode_message, encode_message
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
@@ -88,6 +88,7 @@ class Repository(
                 (10, "concurrency.sql"),
                 (11, "agent_rpc.sql"),
                 (12, "debate.sql"),
+                (13, "dispatch.sql"),
             ):
                 if version == target - 1:
                     schema = files("compiler_optimizer.storage").joinpath(name).read_text()
@@ -96,20 +97,18 @@ class Repository(
                             db.execute(statement)
                     db.execute(f"PRAGMA user_version = {target}")
                     version = target
-            if version != 12:
+            if version != 13:
                 raise StateError(f"unsupported database schema version: {version}")
 
     @contextmanager
     def _transaction(self, *, write=True):
         if self._postgres is not None:
             with self._postgres.transaction(write=write) as db:
-                lease = EXECUTION_LEASE.get()
-                fenced = write and lease is not None and lease["database"] == str(self.database)
-                if fenced:
-                    self._assert_recovery_fence(db, lease)
+                if write:
+                    self._assert_fences(db)
                 yield db
-                if fenced:
-                    self._assert_recovery_fence(db, lease)
+                if write:
+                    self._assert_fences(db)
             return
         db = sqlite3.connect(self.database, isolation_level=None, timeout=10)
         db.row_factory = sqlite3.Row
@@ -118,12 +117,11 @@ class Repository(
             db.execute("PRAGMA journal_mode = WAL")
             db.execute("PRAGMA synchronous = FULL")
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
-            lease = EXECUTION_LEASE.get()
-            if write and lease is not None and lease["database"] == str(self.database):
-                self._assert_recovery_fence(db, lease)
+            if write:
+                self._assert_fences(db)
             yield db
-            if write and lease is not None and lease["database"] == str(self.database):
-                self._assert_recovery_fence(db, lease)
+            if write:
+                self._assert_fences(db)
             db.commit()
         except sqlite3.IntegrityError as error:
             db.rollback()
@@ -133,6 +131,15 @@ class Repository(
             raise
         finally:
             db.close()
+
+    def _assert_fences(self, db):
+        """Reject a write once this context's execution lease or dispatch claim is stale."""
+        lease = EXECUTION_LEASE.get()
+        if lease is not None and lease["database"] == str(self.database):
+            self._assert_recovery_fence(db, lease)
+        claim = DISPATCH_CLAIM.get()
+        if claim is not None and claim["database"] == str(self.database):
+            self._assert_dispatch_claim(db, claim)
 
     @staticmethod
     def _task(db, task_id, *, running=False):

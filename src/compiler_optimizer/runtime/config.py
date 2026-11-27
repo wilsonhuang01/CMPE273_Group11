@@ -36,6 +36,8 @@ class Settings:
     database_url: str = field(default="", repr=False)
     database_password: str = field(default="", repr=False)
     database_schema: str = "optimizer"
+    dispatch_lease_seconds: int = 30
+    dispatch_concurrency: int = 1
     coordinator_health_url: str = "http://localhost:18080/readyz"
     state_directory: Path = Path("var")
     health_host: str = "127.0.0.1"
@@ -152,6 +154,10 @@ class Settings:
                 raise ValueError("the PostgreSQL repository is owned by the coordinator role")
             validate_database_url(database_url)
         database_schema = validate_schema(env.get("DATABASE_SCHEMA", "optimizer"))
+        dispatch_concurrency = number("DISPATCH_CONCURRENCY", 1, 8)
+        if dispatch_concurrency > 1 and backend != "local":
+            # Remote fleet workers are shared across tasks and hold one recovery assignment.
+            raise ValueError("DISPATCH_CONCURRENCY above 1 requires EXECUTION_BACKEND=local")
         s3_endpoint = env.get("S3_ENDPOINT_URL") or None
         if s3_endpoint is not None:
             endpoint = urlsplit(s3_endpoint)
@@ -209,6 +215,8 @@ class Settings:
             database_url=database_url,
             database_password=env.get("DATABASE_PASSWORD", ""),
             database_schema=database_schema,
+            dispatch_lease_seconds=number("DISPATCH_LEASE_SECONDS", 30, 300),
+            dispatch_concurrency=dispatch_concurrency,
             health_port=number(
                 "HEALTH_PORT", 18091 + AGENT_NAMES.index(role) if role in AGENT_NAMES else 8080
             ),

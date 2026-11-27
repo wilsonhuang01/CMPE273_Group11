@@ -26,8 +26,9 @@ data migrates transactionally.
 
 Schema v7 adds `submission_executions`, the automatic dispatch queue and frozen
 operator configuration. RPC intake commits its row atomically with the task.
-The local pipeline lock serializes dispatch; committed baseline/cohort evidence
-provides restart checkpoints. See [automatic execution](automatic-execution.md).
+Schema v13 adds `dispatch_claims`: dispatchers coordinate through expiring,
+fenced database claims rather than the local pipeline lock; committed baseline/cohort
+evidence provides restart checkpoints. See [cloud storage](cloud-storage.md). See [automatic execution](automatic-execution.md).
 Schema v8 adds the fleet registry and primitive work queue. Capability profiles,
 incarnations, hashed worker credentials, job/parent leases, result references and
 cleanup state remain coordinator-owned. Independent workers exchange artifacts

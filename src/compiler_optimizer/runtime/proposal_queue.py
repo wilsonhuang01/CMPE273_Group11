@@ -2,6 +2,7 @@
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 
 import pika
 
@@ -182,7 +183,8 @@ class RabbitProposalQueue:
                             measurements={"remaining_ready": remaining},
                         )
                     with ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(process, incoming)
+                        # Keep the caller's dispatch claim, so result commits stay fenced.
+                        future = executor.submit(copy_context().run, process, incoming)
                         while not future.done():
                             connection.process_data_events(time_limit=0.2)
                         result = future.result()

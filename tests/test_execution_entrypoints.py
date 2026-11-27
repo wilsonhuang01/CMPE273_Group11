@@ -197,6 +197,7 @@ def test_populated_schema_eight_upgrade_preserves_frozen_recovery(tmp_path):
         for table in (
             "agent_rpc_calls",
             "debate_events",
+            "dispatch_claims",
             "debate_slots",
             "debate_runs",
             "cohort_work",

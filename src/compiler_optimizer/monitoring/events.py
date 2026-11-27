@@ -25,6 +25,10 @@ FIELDS = {
     "duplicate",
     "delay_ms",
     "measurements",
+    "owner_id",
+    "previous_owner",
+    "fence",
+    "error_class",
 }
 
 

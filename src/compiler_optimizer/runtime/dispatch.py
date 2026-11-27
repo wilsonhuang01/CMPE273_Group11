@@ -1,22 +1,34 @@
-"""Durable submission orchestration with local or independent sandbox executors."""
+"""Durable submission orchestration with local or independent sandbox executors.
+
+Each dispatcher executes one task at a time under a database claim (see
+``storage/execution.py``). Coordinators on several hosts can share one PostgreSQL
+database: a standby takes over a task when its owner's claim expires, and the previous
+owner's writes are rejected from then on.
+"""
 
 import json
 import logging
+import os
 import re
+import socket
+import threading
 import time
 from dataclasses import replace
+from uuid import uuid4
 
 from compiler_optimizer.agents.rpc_client import configured_client
 from compiler_optimizer.coordinator.round import CohortCoordinator
+from compiler_optimizer.monitoring.events import emit
 from compiler_optimizer.monitoring.watchdog import read_json, remove_owned
 from compiler_optimizer.runtime.proposal_queue import RabbitProposalQueue
 from compiler_optimizer.scheduler.blacklist import RedisBlacklist
 from compiler_optimizer.scheduler.recovery import RecoveryController, Worker
 from compiler_optimizer.shared.benchmarking import BenchmarkPlan
+from compiler_optimizer.shared.lease_context import DISPATCH_CLAIM
 from compiler_optimizer.shared.manifest import ContractError, require
 from compiler_optimizer.shared.recovery import RecoveryPolicy
 from compiler_optimizer.shared.selection import SelectionPolicy
-from compiler_optimizer.storage.errors import ArtifactError, StateError
+from compiler_optimizer.storage.errors import ArtifactError, ClaimLost, StateError
 from compiler_optimizer.workers.baseline import run_baseline
 from compiler_optimizer.workers.docker_runner import DockerRunner, InfrastructureError
 from compiler_optimizer.workers.package import package_from_files, unbundle
@@ -36,6 +48,8 @@ class SubmissionDispatcher:
         recovery_factory=None,
     ):
         self.repository, self.settings = repository, settings
+        self.owner_id = f"{socket.gethostname()[:64]}:{os.getpid()}:{uuid4().hex[:12]}"
+        self.lease_ms = settings.dispatch_lease_seconds * 1000
         self.runner_factory = runner_factory or self._runner
         self.broker_factory = broker_factory or (lambda: RabbitProposalQueue(settings))
         self.recovery_factory = recovery_factory or self._recovery
@@ -119,47 +133,107 @@ class SubmissionDispatcher:
                 re.fullmatch(r"compiler-baseline-[0-9a-f]{32}", lease["container"]) is not None,
                 "invalid stored watchdog container",
             )
-            # The pipeline lock ensures that no other orchestrator owns active work.
+            # The dispatch claim ensures that no other coordinator owns this task's work.
             path.with_name("stop.json").write_text(json.dumps({"reason": "dispatcher_resume"}))
             if remove_owned(lease) != "removed":
                 raise InfrastructureError("previous sandbox cleanup unconfirmed")
 
     def run_once(self, stop=None):
-        """Process one due task. A process crash leaves its execution row resumable."""
+        """Claim and process one due task. A crash leaves the task claimable after its lease."""
         repo = self.repository
         try:
-            with repo.pipeline_lock():
-                pending = [
-                    task_id
-                    for task_id in repo.pending_executions()
-                    if repo.get_execution(task_id)["configuration"].get(
-                        "execution_backend", "local"
-                    )
-                    == self.settings.execution_backend
-                ]
-                if not pending or (stop is not None and stop.is_set()):
+            with repo.pipeline_lock(shared=True):
+                if stop is not None and stop.is_set():
                     return False
-                task_id = pending[0]
-                task = repo.get_task(task_id)
-                if task["status"] in {"completed", "failed"}:
-                    repo.finish_execution(task_id)
-                    return True
-                if not repo.start_execution(task_id):
-                    repo.finish_execution(task_id, error_code="execution_attempts_exhausted")
-                    return True
+                claim = repo.claim_execution(
+                    self.owner_id,
+                    backend=self.settings.execution_backend,
+                    lease_ms=self.lease_ms,
+                    max_active=self.settings.dispatch_concurrency,
+                )
+                if claim is None:
+                    return False
+                self._claimed(claim)
+                done, task_stop = threading.Event(), threading.Event()
+                renewer = threading.Thread(
+                    target=self._renew, args=(claim, stop, done, task_stop), daemon=True
+                )
+                renewer.start()
+                authority = DISPATCH_CLAIM.set(claim)
                 try:
-                    self._execute(task_id, stop)
-                except (ContractError, ArtifactError) as error:
-                    repo.finish_execution(task_id, error_code=type(error).__name__)
-                except Exception as error:
-                    # Transport, daemon and interrupted work retry under a durable total cap.
-                    # Store only the class, never connection strings or credentials.
-                    repo.finish_execution(task_id, error_code=type(error).__name__, retry=True)
+                    self._dispatch(claim["task_id"], task_stop)
+                except ClaimLost:
+                    self._event("dispatch_claim_lost", claim)
+                finally:
+                    DISPATCH_CLAIM.reset(authority)
+                    done.set()
+                    renewer.join()
+                    try:
+                        repo.release_execution_claim(claim)  # A no-op once taken over.
+                    except Exception as error:  # The lease still expires on its own.
+                        self._event(
+                            "dispatch_release_failed", claim, error_class=type(error).__name__
+                        )
                 return True
         except StateError as error:
             if str(error) != "another pipeline owns this state directory":
                 raise
             return False
+
+    def _dispatch(self, task_id, stop):
+        repo = self.repository
+        task = repo.get_task(task_id)
+        if task["status"] in {"completed", "failed"}:
+            repo.finish_execution(task_id)
+            return
+        if not repo.start_execution(task_id):
+            repo.finish_execution(task_id, error_code="execution_attempts_exhausted")
+            return
+        try:
+            self._execute(task_id, stop)
+        except ClaimLost:
+            raise  # The new owner records the outcome; this coordinator may not write.
+        except (ContractError, ArtifactError) as error:
+            repo.finish_execution(task_id, error_code=type(error).__name__)
+        except Exception as error:
+            # Transport, daemon and interrupted work retry under a durable total cap.
+            # Store only the class, never connection strings or credentials.
+            repo.finish_execution(task_id, error_code=type(error).__name__, retry=True)
+
+    def _renew(self, claim, stop, done, task_stop):
+        """Keep the claim alive; stop the task's work on shutdown or once the claim is lost."""
+        interval = self.lease_ms / 3000
+        due = time.monotonic() + interval
+        while not done.wait(min(0.5, interval)):
+            if stop is not None and stop.is_set():
+                task_stop.set()
+            if time.monotonic() < due:
+                continue
+            due = time.monotonic() + interval
+            try:
+                renewed = self.repository.renew_execution_claim(claim, self.lease_ms)
+            except Exception as error:  # Retry; writes are fenced if the lease runs out.
+                self._event("dispatch_renew_failed", claim, error_class=type(error).__name__)
+                continue
+            if not renewed:
+                task_stop.set()
+                self._event("dispatch_claim_lost", claim)
+                return
+
+    def _claimed(self, claim):
+        if claim["previous_owner"] is not None:
+            self._event("dispatch_takeover", claim, previous_owner=claim["previous_owner"])
+        else:
+            self._event("dispatch_claimed", claim)
+
+    def _event(self, event, claim, **fields):
+        emit(
+            event,
+            task_id=claim["task_id"],
+            owner_id=self.owner_id,
+            fence=claim["fence"],
+            **fields,
+        )
 
     def _execute(self, task_id, stop):
         repo = self.repository
