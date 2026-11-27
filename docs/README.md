@@ -111,3 +111,7 @@ capability registration, durable job dispatch, execution leases and cleanup.
 PostgreSQL repository, fenced dispatch claims for several coordinators, TLS to
 Amazon MQ/ElastiCache, the managed-service Terraform, credential rotation and the
 engine validation (`./project infra validate`).
+
+[Local website demo specification](website-demo.md) defines W01: the initial
+bundled example, browser journey, result evidence and capability limits. The
+website API and UI remain planned in the [website backlog](../backlog/website-demo.html).
