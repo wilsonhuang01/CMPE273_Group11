@@ -75,6 +75,7 @@ def test_invalid_reservations_do_not_consume_budget(tmp_path, seconds):
     assert not budget.calls
 
 
+@pytest.mark.sqlite_only
 def test_checkpoint_isolated_state_and_immutable_artifacts(scenario, tmp_path):
     original = read_package(EXAMPLES / "sum-array")
     repository = Repository(tmp_path / "baseline-only")

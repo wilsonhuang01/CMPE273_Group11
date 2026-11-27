@@ -5,6 +5,7 @@ import base64
 import json
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from contextvars import copy_context
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -261,8 +262,10 @@ class CohortCoordinator:
             return self._finish_cancelled(task_id)
         if work["workers"] > 1:
             with ThreadPoolExecutor(max_workers=count, thread_name_prefix="cohort") as executor:
+                # Each member runs in a copy of this context, keeping the dispatch claim's fence.
                 futures = [
-                    executor.submit(self._preflight_member, task_id, m) for m in session["members"]
+                    executor.submit(copy_context().run, self._preflight_member, task_id, m)
+                    for m in session["members"]
                 ]
                 for future in futures:
                     future.result()

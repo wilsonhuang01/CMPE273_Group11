@@ -184,3 +184,124 @@ def test_every_terraform_secret_is_consumed_and_every_consumer_secret_exists():
     consumers = main[main.index("workload_secrets = {") : main.index("ecs_workloads")]
     used = set(re.findall(r'"([a-z-]+)"', consumers))
     assert declared == used
+
+
+# --- Managed data services (action R, phase 4) -----------------------------------------
+
+
+class RotatingSecrets(FakeSecrets):
+    def __init__(self, existing=(), finish_after=2):
+        super().__init__(existing)
+        self.stages, self.tags, self.rotations = {}, [], []
+        self.finish_after, self.polls = finish_after, 0
+
+    def describe_secret(self, SecretId):
+        self.polls += 1
+        description = super().describe_secret(SecretId)
+        if self.rotations and self.polls >= self.finish_after:
+            description["VersionIdsToStages"] = {self.rotations[-1]: ["AWSCURRENT"]}
+        description["Tags"] = list(self.tags)
+        return description
+
+    def get_secret_value(self, SecretId):
+        return {"SecretString": self.values[SecretId]}
+
+    def rotate_secret(self, SecretId, RotateImmediately):
+        assert RotateImmediately
+        self.rotations.append(f"v{len(self.rotations) + 1}")
+        self.polls = 0
+        return {"VersionId": self.rotations[-1]}
+
+    def tag_resource(self, SecretId, Tags):
+        self.tags.extend(Tags)
+
+
+def test_broker_secret_starts_with_the_bootstrap_login_until_rotated():
+    client = RotatingSecrets()
+    assert infra.seed_broker_secret(
+        client, "p/dev/rabbitmq-password", "optimizer", "boot", log=lambda _: None
+    )
+    assert json.loads(client.values["p/dev/rabbitmq-password"]) == {
+        "username": "optimizer",
+        "password": "boot",
+    }
+    client.existing.add("p/dev/rabbitmq-password")
+    assert infra.seed_broker_secret(client, "p/dev/rabbitmq-password", "optimizer", "boot")
+    client.values["p/dev/rabbitmq-password"] = json.dumps(
+        {"username": "optimizer-alt", "password": "rotated"}
+    )
+    assert not infra.seed_broker_secret(client, "p/dev/rabbitmq-password", "optimizer", "boot")
+
+
+def test_rotation_waits_for_the_new_version_and_times_out_with_a_hint():
+    client = RotatingSecrets(finish_after=3)
+    sleeps = []
+    assert infra.rotate_and_wait(client, "s", sleep=sleeps.append, log=lambda _: None) == "v1"
+    assert len(sleeps) == 2
+    stuck = RotatingSecrets(finish_after=10**9)
+    with pytest.raises(infra.InfraError, match="log group"):
+        infra.rotate_and_wait(stuck, "s", timeout=0, sleep=lambda _: None)
+
+
+class FakeCache:
+    def __init__(self):
+        self.modifications, self.status = [], ["modifying", "available"]
+
+    def describe_replication_groups(self, ReplicationGroupId):
+        status = self.status.pop(0) if len(self.status) > 1 else self.status[0]
+        return {"ReplicationGroups": [{"Status": status}]}
+
+    def modify_replication_group(self, **request):
+        self.modifications.append((request["AuthTokenUpdateStrategy"], request["AuthToken"]))
+
+
+def test_cache_auth_is_enforced_once_with_rotate_then_set():
+    secrets, cache = RotatingSecrets(), FakeCache()
+    secrets.values["p/dev/redis-auth-token"] = "t" * 48
+    assert infra.enforce_cache_auth(
+        secrets, cache, "p/dev/redis-auth-token", "g", sleep=lambda _: None, log=lambda _: None
+    )
+    assert cache.modifications == [("ROTATE", "t" * 48), ("SET", "t" * 48)]
+    assert secrets.tags == [{"Key": "AuthEnforced", "Value": "true"}]
+    assert not infra.enforce_cache_auth(
+        secrets, cache, "p/dev/redis-auth-token", "g", log=lambda _: None
+    )
+    assert len(cache.modifications) == 2
+
+
+def test_lambda_packages_are_byte_reproducible(tmp_path):
+    first = infra.write_zip(tmp_path / "a.zip", {"b.py": b"2", "a.py": b"1"})
+    second = infra.write_zip(tmp_path / "b.zip", {"a.py": b"1", "b.py": b"2"})
+    assert first.read_bytes() == second.read_bytes()
+    rotation = infra.build_rotation_package(tmp_path)
+    import zipfile
+
+    assert zipfile.ZipFile(rotation).namelist() == ["rotation.py"]
+    assert infra.var_arguments([Path("x.json"), "-var=a=b"]) == ["-var-file=x.json", "-var=a=b"]
+
+
+def test_terraform_never_receives_service_credentials():
+    """RDS and rotation own every credential; only the broker's bootstrap password, which
+    `infra up` rotates out of use, passes through Terraform state."""
+    stack = ROOT / "infra/aws/environment"
+    text = {path.name: path.read_text() for path in stack.glob("*.tf")}
+    assigned = [
+        (name, line.strip())
+        for name, body in text.items()
+        for line in body.splitlines()
+        if re.match(r"\s*(password|auth_token|master_password)\s*=", line)
+    ]
+    assert assigned == [("messaging.tf", "password = random_password.broker_bootstrap.result")]
+    assert "manage_master_user_password   = true" in text["database.tf"]
+    assert "ignore_changes = [auth_token, auth_token_update_strategy]" in text["messaging.tf"]
+
+
+def test_production_data_services_are_redundant_and_retained():
+    production = json.loads((ROOT / "infra/aws/config/production.tfvars.json").read_text())
+    assert production["database"]["multi_az"]
+    assert production["database"]["backup_retention_days"] >= 7
+    assert production["cache"]["nodes"] >= 2
+    for environment in infra.ENVIRONMENTS:
+        settings = json.loads((ROOT / f"infra/aws/config/{environment}.tfvars.json").read_text())
+        assert 1 <= settings["rotation_days"] <= 365
+        assert settings["database"]["rotation_days"] <= 90

@@ -4,8 +4,8 @@ import json
 from urllib.request import urlopen
 
 import pika
-import redis
 
+from compiler_optimizer.runtime.connections import rabbitmq_parameters, redis_client
 from compiler_optimizer.shared.messaging import EXCHANGE
 
 QUEUES = {
@@ -31,16 +31,8 @@ def declare_topology(channel) -> None:
 
 
 def check_rabbitmq(settings, *, setup=False) -> None:
-    params = pika.ConnectionParameters(
-        host=settings.rabbitmq_host,
-        port=settings.rabbitmq_port,
-        virtual_host=settings.rabbitmq_vhost,
-        credentials=pika.PlainCredentials(settings.rabbitmq_user, settings.rabbitmq_password),
-        socket_timeout=2,
-        stack_timeout=4,
-        blocked_connection_timeout=2,
-        connection_attempts=1,
-        heartbeat=10,
+    params = rabbitmq_parameters(
+        settings, socket_timeout=2, stack_timeout=4, blocked_connection_timeout=2, heartbeat=10
     )
     connection = pika.BlockingConnection(params)
     try:
@@ -53,13 +45,7 @@ def check_rabbitmq(settings, *, setup=False) -> None:
 
 
 def check_redis(settings) -> None:
-    with redis.Redis(
-        host=settings.redis_host,
-        port=settings.redis_port,
-        password=settings.redis_password,
-        socket_connect_timeout=2,
-        socket_timeout=2,
-    ) as client:
+    with redis_client(settings) as client:
         if not client.ping():
             raise RuntimeError("Redis PING failed")
 

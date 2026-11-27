@@ -15,12 +15,13 @@ from test_selection import CohortBroker, MeasuredRunner
 from compiler_optimizer.runtime.config import Settings
 from compiler_optimizer.runtime.coordinator import CoordinatorService
 from compiler_optimizer.runtime.dispatch import SubmissionDispatcher
+from compiler_optimizer.shared.lease_context import DISPATCH_CLAIM
 from compiler_optimizer.shared.manifest import ContractError
 from compiler_optimizer.shared.v1 import contracts_pb2 as pb
 from compiler_optimizer.shared.v1 import contracts_pb2_grpc as rpc
 from compiler_optimizer.shared.workflow import default_workflow
 from compiler_optimizer.storage import Repository
-from compiler_optimizer.storage.errors import ConflictError
+from compiler_optimizer.storage.errors import ClaimLost, ConflictError
 from compiler_optimizer.workers.baseline import metadata
 from compiler_optimizer.workers.docker_runner import InfrastructureError
 from compiler_optimizer.workers.package import read_package
@@ -111,6 +112,7 @@ def test_automatic_submission_runs_its_frozen_debate_policy(submitted):
     assert execution["configuration"]["debate_policy"] == config["debate_policy"]
 
 
+@pytest.mark.sqlite_only
 def test_queue_insert_failure_rolls_back_submission(submitted):
     repo, _, request = submitted
     with repo._transaction() as db:
@@ -348,3 +350,155 @@ def test_existing_submission_preserves_local_agents_after_rpc_deployment(submitt
     assert owner.run_once()
     assert repo.get_task(request.meta.task_id)["status"] == "completed"
     assert not repo.list_agent_rpc_calls(request.meta.task_id)
+
+
+# Action R phase 3: database-backed dispatch claims and fencing --------------------
+
+
+def expire(seconds=0.12):
+    time.sleep(seconds)  # Claims below use 50 ms leases on the database clock.
+
+
+def second_submission(repo, request):
+    other = pb.Submission()
+    other.CopyFrom(request)
+    other.meta.task_id, other.meta.message_id = str(uuid4()), str(uuid4())
+    enqueue(repo, other)
+    return other.meta.task_id
+
+
+def test_claims_are_exclusive_and_a_takeover_fences_the_previous_owner(submitted):
+    repo, _, request = submitted
+    enqueue(repo, request)
+    task = request.meta.task_id
+    first = repo.claim_execution("coordinator-a", backend="local", lease_ms=50)
+    assert (first["task_id"], first["fence"], first["previous_owner"]) == (task, 1, None)
+    # A live claim excludes every other coordinator, whatever its concurrency limit.
+    assert repo.claim_execution("coordinator-b", backend="local", lease_ms=50, max_active=8) is None
+    authority = DISPATCH_CLAIM.set(first)
+    try:
+        repo.checkpoint_execution(task, "baseline")  # The owner may write while it is live.
+    finally:
+        DISPATCH_CLAIM.reset(authority)
+    expire()
+    second = repo.claim_execution("coordinator-b", backend="local", lease_ms=60_000)
+    assert (second["task_id"], second["fence"]) == (task, 2)
+    assert second["previous_owner"] == "coordinator-a"
+    authority = DISPATCH_CLAIM.set(first)
+    try:
+        with pytest.raises(ClaimLost):
+            repo.checkpoint_execution(task, "optimizing")
+        with pytest.raises(ClaimLost):
+            repo.finish_execution(task, error_code="late", retry=True)
+    finally:
+        DISPATCH_CLAIM.reset(authority)
+    assert not repo.renew_execution_claim(first, 60_000)
+    repo.release_execution_claim(first)  # A stale release cannot free the new owner's claim.
+    execution = repo.get_execution(task)
+    assert (execution["stage"], execution["finished"]) == ("baseline", 0)
+    assert [(c["owner_id"], c["fence"]) for c in repo.dispatch_claims()] == [("coordinator-b", 2)]
+    assert repo.renew_execution_claim(second, 60_000)
+
+
+def test_released_claims_keep_their_fence_and_backends_stay_separate(submitted):
+    repo, _, request = submitted
+    enqueue(repo, request)
+    assert repo.claim_execution("remote-coordinator", backend="remote", lease_ms=50) is None
+    claim = repo.claim_execution("a", backend="local", lease_ms=60_000)
+    repo.release_execution_claim(claim)
+    again = repo.claim_execution("b", backend="local", lease_ms=60_000)
+    assert (again["fence"], again["previous_owner"]) == (2, None)  # Released, not abandoned.
+
+
+def test_active_claims_are_capped_across_coordinators(submitted):
+    repo, _, request = submitted
+    enqueue(repo, request)
+    other = second_submission(repo, request)
+    first = repo.claim_execution("a", backend="local", lease_ms=60_000)
+    assert repo.claim_execution("b", backend="local", lease_ms=60_000) is None
+    second = repo.claim_execution("b", backend="local", lease_ms=60_000, max_active=2)
+    assert {first["task_id"], second["task_id"]} == {request.meta.task_id, other}
+
+
+def test_standby_coordinator_takes_over_an_abandoned_task(submitted):
+    repo, runner, request = submitted
+    enqueue(repo, request)
+    task = request.meta.task_id
+    # Coordinator A claims the task and stops (process loss or partition) without releasing.
+    lost = repo.claim_execution("coordinator-a", backend="local", lease_ms=50)
+    standby = dispatcher(Repository(repo.root), runner)
+    assert not standby.run_once()  # Live claim: the standby must wait.
+    expire()
+    assert standby.run_once()
+    assert repo.get_task(task)["status"] == "completed"
+    assert repo.get_execution(task)["stage"] == "completed"
+    decision = repo.get_decision(task)
+    authority = DISPATCH_CLAIM.set(lost)
+    try:
+        with pytest.raises(ClaimLost):
+            repo.finish_execution(task, error_code="late")
+    finally:
+        DISPATCH_CLAIM.reset(authority)
+    assert repo.get_decision(task) == decision
+    claims = repo.dispatch_claims()
+    assert [(c["fence"], c["expires_ms"]) for c in claims] == [(2, 0)]  # Released after success.
+    assert claims[0]["owner_id"] == standby.owner_id
+
+
+def test_claim_is_renewed_while_long_work_runs(submitted, monkeypatch):
+    repo, runner, request = submitted
+    enqueue(repo, request)
+    worker = SubmissionDispatcher(
+        repo,
+        Settings(role="coordinator", dispatch_lease_seconds=1),
+        runner_factory=lambda _: runner,
+        broker_factory=lambda: CohortBroker(repo),
+        recovery_factory=lambda *_: None,
+    )
+    original = worker._execute
+
+    def slow(task_id, stop):
+        time.sleep(1.6)  # Longer than the lease: only renewal keeps the claim alive.
+        assert repo.claim_execution("intruder", backend="local", lease_ms=50) is None
+        original(task_id, stop)
+
+    monkeypatch.setattr(worker, "_execute", slow)
+    assert worker.run_once()
+    assert repo.get_task(request.meta.task_id)["status"] == "completed"
+
+
+def test_lost_claim_stops_the_owner_without_recording_an_outcome(submitted, monkeypatch):
+    repo, runner, request = submitted
+    enqueue(repo, request)
+    task = request.meta.task_id
+    worker = dispatcher(repo, runner)
+
+    def taken_over(task_id, stop):
+        claim = dict(DISPATCH_CLAIM.get())
+        authority = DISPATCH_CLAIM.set(None)
+        try:  # Another coordinator replaces the claim.
+            with repo._transaction() as db:
+                db.execute("UPDATE dispatch_claims SET token='other' WHERE task_id=?", (task_id,))
+        finally:
+            DISPATCH_CLAIM.reset(authority)
+        assert claim["task_id"] == task
+        repo.checkpoint_execution(task_id, "baseline")
+
+    monkeypatch.setattr(worker, "_execute", taken_over)
+    assert worker.run_once()
+    execution = repo.get_execution(task)
+    # The attempt was counted before the loss; nothing after it was committed.
+    assert (execution["attempts"], execution["stage"], execution["finished"]) == (1, "queued", 0)
+    assert repo.get_task(task)["status"] == "accepted"
+    assert [c["token"] for c in repo.dispatch_claims()] == ["other"]
+
+
+def test_dispatch_concurrency_is_limited_to_unshared_local_workers():
+    assert Settings.from_env("coordinator", {}).dispatch_concurrency == 1
+    assert Settings.from_env("coordinator", {"DISPATCH_CONCURRENCY": "4"}).dispatch_concurrency == 4
+    with pytest.raises(ValueError, match="EXECUTION_BACKEND=local"):
+        Settings.from_env(
+            "coordinator", {"DISPATCH_CONCURRENCY": "2", "EXECUTION_BACKEND": "remote"}
+        )
+    with pytest.raises(ValueError, match="DISPATCH_LEASE_SECONDS"):
+        Settings.from_env("coordinator", {"DISPATCH_LEASE_SECONDS": "301"})

@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.80"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
   # Partial configuration: `./project infra` passes the bucket, key, lock table and
   # region created by infra/aws/bootstrap, so one module serves every environment.

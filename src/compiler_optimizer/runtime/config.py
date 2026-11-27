@@ -19,9 +19,28 @@ class Settings:
     rabbitmq_user: str = field(default="optimizer", repr=False)
     rabbitmq_password: str = field(default="optimizer-dev-password", repr=False)
     rabbitmq_vhost: str = "/"
+    rabbitmq_tls: bool = False
+    rabbitmq_ca: Path | None = None
+    rabbitmq_secret_id: str = ""
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_password: str = field(default="redis-dev-password", repr=False)
+    redis_username: str | None = None
+    redis_tls: bool = False
+    redis_ca: Path | None = None
+    redis_secret_id: str = ""
+    artifact_backend: str = "local"
+    artifact_bucket: str = ""
+    artifact_prefix: str = ""
+    artifact_kms_key_id: str = ""
+    aws_region: str | None = None
+    s3_endpoint_url: str | None = None
+    database_url: str = field(default="", repr=False)
+    database_password: str = field(default="", repr=False)
+    database_schema: str = "optimizer"
+    database_secret_id: str = ""
+    dispatch_lease_seconds: int = 30
+    dispatch_concurrency: int = 1
     coordinator_health_url: str = "http://localhost:18080/readyz"
     state_directory: Path = Path("var")
     health_host: str = "127.0.0.1"
@@ -113,11 +132,57 @@ class Settings:
             ("FLEET_ENABLED", "true"),
             ("SERVICE_ENABLED", "true"),
             ("COORDINATOR_TLS", "false"),
+            ("RABBITMQ_TLS", "false"),
+            ("REDIS_TLS", "false"),
         ):
             switch = env.get(key, default)
             if switch not in {"true", "false"}:
                 raise ValueError(f"{key} must be true or false")
             switches[key] = switch == "true"
+        for service in ("RABBITMQ", "REDIS"):
+            if env.get(service + "_CA") and not switches[service + "_TLS"]:
+                raise ValueError(f"{service}_CA requires {service}_TLS=true")
+        artifact_backend = env.get("ARTIFACT_BACKEND", "local")
+        if artifact_backend not in {"local", "s3"}:
+            raise ValueError("ARTIFACT_BACKEND must be local or s3")
+        if artifact_backend == "s3" and role != "coordinator":
+            raise ValueError("the S3 artifact backend is owned by the coordinator role")
+        if artifact_backend == "s3" and not env.get("ARTIFACT_S3_BUCKET"):
+            raise ValueError("ARTIFACT_BACKEND=s3 requires ARTIFACT_S3_BUCKET")
+        from compiler_optimizer.storage.postgres import validate_database_url, validate_schema
+
+        database_url = env.get("DATABASE_URL", "")
+        if database_url:
+            if role != "coordinator":
+                raise ValueError("the PostgreSQL repository is owned by the coordinator role")
+            validate_database_url(database_url)
+        database_schema = validate_schema(env.get("DATABASE_SCHEMA", "optimizer"))
+        # Rotating credentials are read from Secrets Manager instead of fixed variables.
+        secret_ids = {
+            service: env.get(f"{service}_SECRET_ID", "")
+            for service in ("RABBITMQ", "REDIS", "DATABASE")
+        }
+        for service, secret_id in secret_ids.items():
+            if secret_id and env.get(f"{service}_PASSWORD"):
+                raise ValueError(f"set {service}_SECRET_ID or {service}_PASSWORD, not both")
+        if secret_ids["DATABASE"] and not database_url:
+            raise ValueError("DATABASE_SECRET_ID requires DATABASE_URL")
+        dispatch_concurrency = number("DISPATCH_CONCURRENCY", 1, 8)
+        if dispatch_concurrency > 1 and backend != "local":
+            # Remote fleet workers are shared across tasks and hold one recovery assignment.
+            raise ValueError("DISPATCH_CONCURRENCY above 1 requires EXECUTION_BACKEND=local")
+        s3_endpoint = env.get("S3_ENDPOINT_URL") or None
+        if s3_endpoint is not None:
+            endpoint = urlsplit(s3_endpoint)
+            loopback = endpoint.hostname in ("localhost", "127.0.0.1", "::1")
+            if (
+                endpoint.scheme not in ("https", "http")
+                or (endpoint.scheme == "http" and not loopback)
+                or not endpoint.hostname
+                or endpoint.username
+                or endpoint.password
+            ):
+                raise ValueError("S3_ENDPOINT_URL must be HTTPS (HTTP only on loopback)")
         target = env.get("WORKER_TARGET", "auto")
         if target not in {"auto", "linux-x86_64", "linux-aarch64", "linux-riscv64"}:
             raise ValueError("unsupported WORKER_TARGET")
@@ -147,8 +212,27 @@ class Settings:
         settings = cls(
             role=role,
             **values,
-            rabbitmq_port=number("RABBITMQ_PORT", 5672),
+            rabbitmq_port=number("RABBITMQ_PORT", 5671 if switches["RABBITMQ_TLS"] else 5672),
+            rabbitmq_tls=switches["RABBITMQ_TLS"],
+            rabbitmq_ca=Path(env["RABBITMQ_CA"]) if env.get("RABBITMQ_CA") else None,
+            rabbitmq_secret_id=secret_ids["RABBITMQ"],
             redis_port=number("REDIS_PORT", 6379),
+            redis_username=env.get("REDIS_USERNAME") or None,
+            redis_tls=switches["REDIS_TLS"],
+            redis_ca=Path(env["REDIS_CA"]) if env.get("REDIS_CA") else None,
+            redis_secret_id=secret_ids["REDIS"],
+            artifact_backend=artifact_backend,
+            artifact_bucket=env.get("ARTIFACT_S3_BUCKET", ""),
+            artifact_prefix=env.get("ARTIFACT_S3_PREFIX", ""),
+            artifact_kms_key_id=env.get("ARTIFACT_S3_KMS_KEY_ID", ""),
+            aws_region=env.get("AWS_REGION") or env.get("AWS_DEFAULT_REGION") or None,
+            s3_endpoint_url=s3_endpoint,
+            database_url=database_url,
+            database_password=env.get("DATABASE_PASSWORD", ""),
+            database_schema=database_schema,
+            database_secret_id=secret_ids["DATABASE"],
+            dispatch_lease_seconds=number("DISPATCH_LEASE_SECONDS", 30, 300),
+            dispatch_concurrency=dispatch_concurrency,
             health_port=number(
                 "HEALTH_PORT", 18091 + AGENT_NAMES.index(role) if role in AGENT_NAMES else 8080
             ),

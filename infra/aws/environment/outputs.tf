@@ -1,10 +1,10 @@
-# One non-secret document that later actions (R storage, T control plane, U workers)
+# One non-secret document that later actions (T control plane, U workers)
 # read instead of hard-coding IDs. It records capacity limits, cost ownership and
 # retained-data behavior alongside the network and identity references.
 
 locals {
   environment_config = {
-    schema_version = 1
+    schema_version = 2
     project        = var.project
     environment    = var.environment
     region         = var.region
@@ -60,6 +60,36 @@ locals {
     model = {
       bedrock_enabled = var.enable_bedrock
     }
+    # Managed services from action R. `coordinator_environment` is the non-secret part
+    # of the coordinator's configuration; credentials are read through the secret IDs.
+    data_services = {
+      artifacts = {
+        bucket      = aws_s3_bucket.artifacts.bucket
+        prefix      = local.artifact_prefix
+        object_lock = local.retain
+      }
+      database = {
+        endpoint       = aws_db_instance.state.address
+        port           = aws_db_instance.state.port
+        name           = local.database_name
+        engine_version = aws_db_instance.state.engine_version_actual
+        secret_arn     = aws_db_instance.state.master_user_secret[0].secret_arn
+        ca_bundle_url  = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem"
+        ca_bundle_path = local.database_ca_path
+        rotation_days  = var.database.rotation_days
+      }
+      broker = {
+        endpoint       = aws_mq_broker.main.instances[0].endpoints[0]
+        engine_version = local.rabbitmq_version
+        rotation_days  = var.rotation_days
+      }
+      cache = {
+        endpoint       = aws_elasticache_replication_group.cache.primary_endpoint_address
+        engine_version = "valkey ${local.valkey_version}"
+        rotation_days  = var.rotation_days
+      }
+      coordinator_environment = local.coordinator_environment
+    }
   }
 }
 
@@ -67,7 +97,7 @@ resource "aws_ssm_parameter" "environment" {
   name        = "/${var.project}/${var.environment}/environment"
   description = "Infrastructure references and limits for ${local.name} (non-secret)"
   type        = "String"
-  tier        = "Standard"
+  tier        = "Intelligent-Tiering" # Advanced only if the document outgrows 4 KB.
   value       = jsonencode(local.environment_config)
 }
 
@@ -78,4 +108,22 @@ output "environment_config" {
 output "secret_names" {
   description = "Secrets that `./project infra up` seeds when they have no value."
   value       = [for s in aws_secretsmanager_secret.service : s.name]
+}
+
+# Read by `./project infra up` to seed and rotate credentials after apply.
+output "data_services_admin" {
+  value = {
+    broker_secret        = aws_secretsmanager_secret.service["rabbitmq-password"].name
+    broker_user          = local.rabbitmq_user
+    cache_secret         = aws_secretsmanager_secret.service["redis-auth-token"].name
+    cache_group_id       = aws_elasticache_replication_group.cache.id
+    database_secret      = aws_db_instance.state.master_user_secret[0].secret_arn
+    service_check_lambda = aws_lambda_function.function["service-check"].function_name
+  }
+}
+
+output "broker_bootstrap_password" {
+  description = "Initial broker password; `infra up` rotates it out of use immediately."
+  value       = random_password.broker_bootstrap.result
+  sensitive   = true
 }

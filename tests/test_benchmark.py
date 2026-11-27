@@ -300,6 +300,7 @@ def test_raw_artifact_corruption_blocks_selection(verified):
         repo.select_result(task, result.job_id, 1, expected_revision=1, reason="Gain")
 
 
+@pytest.mark.sqlite_only
 def test_schema_one_migrates_without_losing_data(tmp_path):
     root = tmp_path / "state"
     root.mkdir()
@@ -310,6 +311,6 @@ def test_schema_one_migrates_without_losing_data(tmp_path):
     Repository(root)
     Repository(root)
     with sqlite3.connect(root / "state.sqlite3") as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 12
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 13
         assert db.execute("SELECT revision FROM tasks WHERE task_id='old'").fetchone()[0] == 7
         assert db.execute("SELECT COUNT(*) FROM benchmark_runs").fetchone()[0] == 0

@@ -164,12 +164,16 @@ class PipelineStorage:
             ]
 
     @contextmanager
-    def pipeline_lock(self):
-        """Serialize local milestone orchestrators; the database is never held during execution."""
+    def pipeline_lock(self, *, shared=False):
+        """Serialize local milestone orchestrators; the database is never held during execution.
+
+        Standalone CLIs take it exclusively. Automatic dispatchers take it shared: they
+        coordinate through database claims instead, but still exclude a running CLI.
+        """
         fd = os.open(self.root / "pipeline.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
             except BlockingIOError as error:
                 raise StateError("another pipeline owns this state directory") from error
             yield
