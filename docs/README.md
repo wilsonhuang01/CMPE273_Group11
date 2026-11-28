@@ -111,6 +111,9 @@ capability registration, durable job dispatch, execution leases and cleanup.
 PostgreSQL repository, fenced dispatch claims for several coordinators, TLS to
 Amazon MQ/ElastiCache, the managed-service Terraform, credential rotation and the
 engine validation (`./project infra validate`).
+[Image releases](releases.md) covers action S: ECR repositories, GitHub OIDC roles,
+native multi-arch builds, the release manifest and scan gate, staging promotion and
+schema-safe rollback.
 
 [Local website demo specification](website-demo.md) defines W01: the initial
 bundled example, browser journey, result evidence and capability limits. The

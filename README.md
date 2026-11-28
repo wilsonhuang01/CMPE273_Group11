@@ -54,6 +54,10 @@ environments as Terraform; `./project infra up --env staging` provisions the pri
 network, roles, keys, secrets and budgets after showing a saved plan, and
 `./project infra down --env staging` tears it down.
 
+[Image releases](docs/releases.md) build each `vX.Y.Z` tag natively for amd64 and arm64,
+push digest-pinned images to Amazon ECR through GitHub OIDC, gate on scans and native
+sandbox tests, and promote to staging with schema-safe rollback.
+
 ## Initial implementation scope
 
 The [implementation backlog](backlog/index.html) [(Preview)](https://html-preview.github.io/?url=https://github.com/wilsonhuang01/CMPE273_Group11/blob/main/backlog/index.html) lists remaining actions,

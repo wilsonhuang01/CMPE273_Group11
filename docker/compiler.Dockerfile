@@ -26,3 +26,11 @@ LABEL compiler-optimizer.benchmark-tools-version="1"
 # The trusted supervisor drops the compiler/program to UID/GID 10001.
 ENTRYPOINT ["python3", "/opt/compiler-worker/supervisor.py"]
 COPY src/compiler_optimizer/workers/fuzz_policy.py src/compiler_optimizer/workers/fuzz_runtime.py src/compiler_optimizer/workers/energy.py /opt/compiler-worker/
+# Release provenance (action S), last so local builds keep their layer cache.
+ARG RELEASE_VERSION=dev
+ARG SOURCE_REVISION=unknown
+ARG BUILD_MODE=local
+LABEL org.opencontainers.image.version="${RELEASE_VERSION}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.source="https://github.com/wilsonhuang01/CMPE273_Group11" \
+      compiler-optimizer.build-mode="${BUILD_MODE}"

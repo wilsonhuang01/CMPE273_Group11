@@ -103,6 +103,10 @@ reviewed plan.
 Once per account, activate the `CostScope` cost allocation tag in the Billing
 console. Budgets can't attribute spend until it is active.
 
+The account-level image repositories and GitHub OIDC roles are a separate stack
+(`./project infra release-plan`, `release-up`, `release-output`, `release-down`); see
+[image releases](releases.md).
+
 ## Secrets
 
 Terraform creates only empty secret containers, so secret values never appear in

@@ -153,16 +153,15 @@ def package(destination, evidence, *, agent_states=(), images=()):
 
 
 def main():
-    if sys.argv[1:2] == ["infra"]:  # AWS environments (action Q); see docs/aws-infrastructure.md
+    if sys.argv[1:2] in (["infra"], ["release"]):  # AWS (actions Q-S); docs/aws-infrastructure.md
+        tool = {"infra": "tools/infra.py", "release": "tools/release.py"}[sys.argv[1]]
         env = environment()
         env["PIP_CONSTRAINT"] = str(ROOT / "constraints.txt")
         try:
             import boto3  # noqa: F401
         except ImportError:
             command([sys.executable, "-m", "pip", "install", "-e", ".[aws]"], env)
-        os.execvpe(
-            sys.executable, [sys.executable, str(ROOT / "tools/infra.py"), *sys.argv[2:]], env
-        )
+        os.execvpe(sys.executable, [sys.executable, str(ROOT / tool), *sys.argv[2:]], env)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",

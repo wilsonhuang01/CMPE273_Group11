@@ -1,11 +1,12 @@
-"""AWS environment provisioning (actions Q and R): `./project infra <command> --env <name>`.
+"""AWS environment provisioning (actions Q, R and S): `./project infra <command> --env <name>`.
 
 Terraform owns resources; this wrapper adds the rules Terraform cannot express:
 committed settings never contain credentials, plans are saved for review before
 apply, secrets are seeded in memory after apply, broker and cache credentials are
 put into service and rotated, and protected environments need an explicit
 confirmation before teardown. It also builds the Lambda packages reproducibly and
-runs the in-VPC service check (`validate`).
+runs the in-VPC service check (`validate`). The account-level release stack (ECR
+repositories and GitHub OIDC roles, action S) uses the `release-*` commands.
 """
 
 import argparse
@@ -27,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INFRA = ROOT / "infra" / "aws"
 STACK = INFRA / "environment"
 BOOTSTRAP = INFRA / "bootstrap"
+RELEASE_STACK = INFRA / "release"
 CONFIG = INFRA / "config"
 PLANS = ROOT / "var" / "infra"
 PACKAGES = PLANS / "lambda"
@@ -405,7 +407,7 @@ def confirm(prompt, assume_yes):
 
 
 def cmd_check(_args):
-    for directory in (BOOTSTRAP, STACK):
+    for directory in (BOOTSTRAP, STACK, RELEASE_STACK):
         terraform(["fmt", "-check", "-recursive", "-diff"], directory)
         terraform(["init", "-backend=false", "-input=false"], directory)
         terraform(["validate"], directory)
@@ -415,6 +417,7 @@ def cmd_check(_args):
             raise InfraError(f"{environment}.tfvars.json has the wrong environment")
         if found := sorted(_secret_like_keys(settings)):
             raise InfraError(f"{environment}.tfvars.json contains credential-like keys {found}")
+    release_settings(CONFIG, require_owner=False)
     print("CHECKED: Terraform formatting, validation and committed environment settings")
 
 
@@ -587,6 +590,81 @@ def cmd_output(args):
     print(terraform(["output", "-json", "environment_config"], STACK, capture=True))
 
 
+# --- Release stack (action S) ----------------------------------------------------
+
+
+def release_settings(config=CONFIG, require_owner=True):
+    """Committed release.tfvars.json plus the git-ignored cost owner."""
+    settings = _read_json(config / "release.tfvars.json")
+    if LOCAL_KEYS & settings.keys():
+        raise InfraError("release.tfvars.json must not set personal settings")
+    if found := sorted(_secret_like_keys(settings)):
+        raise InfraError(f"release.tfvars.json contains credential-like keys {found}")
+    if any(ch in settings.get("github_repository", "*") for ch in "*?"):
+        raise InfraError("github_repository must name one repository, without wildcards")
+    owner = None
+    local = config / "local.tfvars.json"
+    if local.exists():
+        owner = _read_json(local).get("cost_owner")
+    if require_owner and not owner:
+        raise InfraError("set cost_owner in infra/aws/config/local.tfvars.json")
+    return settings, owner
+
+
+def prepare_release():
+    settings, owner = release_settings()
+    backend = load_backend()
+    session = aws_session(settings["region"])
+    check_account(backend, caller_account(session))
+    terraform(
+        ["init", "-input=false", "-reconfigure", *backend_arguments(backend, "release")],
+        RELEASE_STACK,
+    )
+    return [f"-var-file={CONFIG / 'release.tfvars.json'}", f"-var=cost_owner={owner}"]
+
+
+def release_plan(variables, destroy=False):
+    PLANS.mkdir(parents=True, exist_ok=True)
+    plan = PLANS / f"release-{'destroy' if destroy else 'apply'}.tfplan"
+    terraform(
+        ["plan", "-input=false", *(["-destroy"] if destroy else []), *variables, f"-out={plan}"],
+        RELEASE_STACK,
+    )
+    review = plan.with_suffix(".txt")
+    review.write_text(terraform(["show", "-no-color", str(plan)], RELEASE_STACK, capture=True))
+    print(f"PLAN: {review.relative_to(ROOT)} (review before applying)")
+    return plan
+
+
+def cmd_release_plan(_args):
+    release_plan(prepare_release())
+
+
+def cmd_release_up(args):
+    plan = release_plan(prepare_release())
+    if not confirm("Apply the release stack (ECR repositories and GitHub roles)?", args.yes):
+        print("Not applied.")
+        return
+    terraform(["apply", "-input=false", str(plan)], RELEASE_STACK)
+    plan.unlink(missing_ok=True)
+    print("READY: release stack. Set the GitHub variables from `./project infra release-output`.")
+
+
+def cmd_release_output(_args):
+    prepare_release()
+    print(terraform(["output", "-json"], RELEASE_STACK, capture=True))
+
+
+def cmd_release_down(args):
+    plan = release_plan(prepare_release(), destroy=True)
+    print("Repositories that still hold images are not deleted (force_delete = false).")
+    if not confirm("Destroy the release stack?", args.yes):
+        print("Not destroyed.")
+        return
+    terraform(["apply", "-input=false", str(plan)], RELEASE_STACK)
+    plan.unlink(missing_ok=True)
+
+
 COMMANDS = {
     "check": cmd_check,
     "bootstrap": cmd_bootstrap,
@@ -596,6 +674,10 @@ COMMANDS = {
     "output": cmd_output,
     "rotate": cmd_rotate,
     "validate": cmd_validate,
+    "release-plan": cmd_release_plan,
+    "release-up": cmd_release_up,
+    "release-output": cmd_release_output,
+    "release-down": cmd_release_down,
 }
 
 

@@ -1,0 +1,4 @@
+{
+  "_comment": "Accepted CRITICAL findings that do not block promotion. Each entry: {\"id\": \"CVE-...\", \"reason\": \"why it is not exploitable here\", \"expires\": \"YYYY-MM-DD\"}. Expired entries block again.",
+  "findings": []
+}

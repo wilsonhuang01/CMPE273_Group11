@@ -1,0 +1,257 @@
+name: Release
+
+# Action S: a vX.Y.Z tag builds traceable images, scans them and promotes them to
+# staging. AWS access uses short-lived OIDC credentials only; no access keys are stored.
+# Repository variables (from `./project infra release-output`): AWS_REGION,
+# AWS_RELEASE_ROLE_ARN, ECR_REGISTRY, optionally ARM64_RUNNER. The `staging` GitHub
+# environment sets AWS_DEPLOY_ROLE_ARN.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        type: choice
+        options: [staging]
+        default: staging
+      version:
+        description: Version to restore (empty = previous schema-compatible release)
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PIP_CONSTRAINT: ${{ github.workspace }}/constraints.txt
+
+jobs:
+  checks:
+    # Every CI gate (unit, PostgreSQL, managed engines, Compose, Docker integration,
+    # clean release, Terraform) must pass before anything is published.
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/ci.yml
+
+  metadata:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check tag, version and released migrations
+        id: version
+        run: |
+          python tools/release.py check-tag --ref "$GITHUB_REF"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [checks, metadata]
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            target: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            arch: arm64
+            target: linux-aarch64
+            runner: arm64
+    # Each platform builds on its own hardware so native validation is real, not QEMU.
+    runs-on: ${{ matrix.runner == 'arm64' && (vars.ARM64_RUNNER || 'ubuntu-24.04-arm') || matrix.runner }}
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.metadata.outputs.version }}
+      REGISTRY: ${{ vars.ECR_REGISTRY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Confirm the runner is native for this platform
+        run: |
+          machine="$(uname -m)"
+          case "${{ matrix.arch }}:$machine" in
+            amd64:x86_64|arm64:aarch64) echo "native $machine" ;;
+            *) echo "runner is $machine, not ${{ matrix.arch }}; refusing an emulated release build"; exit 1 ;;
+          esac
+      - name: Build images
+        run: |
+          for image in app compiler; do
+            file=Dockerfile; extra=()
+            if [ "$image" = compiler ]; then
+              file=docker/compiler.Dockerfile
+              extra=(--build-arg "EXECUTION_TARGET=${{ matrix.target }}")
+            fi
+            docker build --file "$file" --platform "${{ matrix.platform }}" \
+              --build-arg "RELEASE_VERSION=$VERSION" \
+              --build-arg "SOURCE_REVISION=$GITHUB_SHA" \
+              --build-arg BUILD_MODE=native "${extra[@]}" \
+              --tag "release/$image:candidate" .
+          done
+      - name: Validate the sandbox natively before publishing
+        env:
+          BASELINE_DOCKER_TESTS: "1"
+          COMPILER_IMAGE: release/compiler:candidate
+          COMPILER_TARGET: ${{ matrix.target }}
+        run: |
+          python -m pip install -c constraints.txt -e . pytest
+          docker run --rm --entrypoint python release/app:candidate -c 'import compiler_optimizer.runtime'
+          # These suites honor COMPILER_TARGET; the baseline suite assumes x86-64.
+          suites=(tests/test_correctness_domains_docker.py tests/test_measurement_tools_docker.py)
+          [ "${{ matrix.target }}" = linux-x86_64 ] && suites+=(tests/test_baseline_docker.py)
+          python -m pytest --basetemp="$RUNNER_TEMP/release-validation" "${suites[@]}" -m docker
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: release-${{ github.run_id }}-${{ matrix.arch }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Push platform images and record digests
+        run: |
+          mkdir -p records
+          compiler_version="$(docker run --rm --entrypoint clang-18 release/compiler:candidate --version | head -1)"
+          for image in app compiler; do
+            repository="$REGISTRY/cmpe273-optimizer/$image"
+            tag="v$VERSION-${{ matrix.arch }}"
+            docker tag "release/$image:candidate" "$repository:$tag"
+            docker push "$repository:$tag"
+            reference="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$repository:$tag" | grep "^$repository@" | head -1)"
+            version_arg=()
+            [ "$image" = compiler ] && version_arg=(--compiler-version "$compiler_version")
+            python tools/release.py record --image "$image" --platform "${{ matrix.platform }}" \
+              --reference "$reference" --tag "$tag" --build-mode native \
+              --native-validation passed "${version_arg[@]}" \
+              --output "records/$image-${{ matrix.arch }}.json"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-records-${{ matrix.arch }}
+          path: records/
+          retention-days: 90
+
+  publish:
+    needs: [metadata, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.metadata.outputs.version }}
+      REGISTRY: ${{ vars.ECR_REGISTRY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -c constraints.txt 'boto3>=1.35,<2'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-records-*
+          path: records
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: release-${{ github.run_id }}-publish
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - name: Create multi-architecture release indexes
+        run: |
+          indexes=()
+          for image in app compiler; do
+            repository="$REGISTRY/cmpe273-optimizer/$image"
+            docker buildx imagetools create --tag "$repository:v$VERSION" \
+              $(python -c 'import json,sys,pathlib; print(" ".join(json.loads(p.read_text())["reference"] for p in sorted(pathlib.Path("records").rglob(sys.argv[1]+"-*.json"))))' "$image")
+            digest="$(docker buildx imagetools inspect "$repository:v$VERSION" --format '{{json .Manifest}}' | python -c 'import json,sys; print(json.load(sys.stdin)["digest"])')"
+            indexes+=(--index "$image=$repository@$digest")
+          done
+          python tools/release.py assemble --ref "$GITHUB_REF" --revision "$GITHUB_SHA" \
+            --records records "${indexes[@]}" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --output release-manifest.json
+      - name: Gate on vulnerability scans
+        run: python tools/release.py scan --manifest release-manifest.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-manifest
+          path: release-manifest.json
+          retention-days: 90
+
+  deploy-staging:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -c constraints.txt 'boto3>=1.35,<2'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: deploy-staging-${{ github.run_id }}
+      - name: Promote to staging
+        id: promote
+        run: python tools/release.py promote --env staging --manifest release-manifest.json --actor "$GITHUB_ACTOR"
+      # Action T adds the ECS service rollout and its health wait here.
+      - name: Staging integration checks
+        run: |
+          python tools/release.py verify --env staging --manifest release-manifest.json
+      # Only a release this job promoted is rolled back; a refused promotion changed nothing.
+      - name: Roll back staging after a failed check
+        if: failure() && steps.promote.outcome == 'success'
+        run: python tools/release.py rollback --env staging --actor "$GITHUB_ACTOR"
+
+  rollback:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -c constraints.txt 'boto3>=1.35,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: rollback-${{ inputs.environment }}-${{ github.run_id }}
+      - name: Restore the previous compatible release
+        env:
+          TARGET_VERSION: ${{ inputs.version }}
+        run: |
+          python tools/release.py rollback --env "${{ inputs.environment }}" \
+            ${TARGET_VERSION:+--to "$TARGET_VERSION"} --actor "$GITHUB_ACTOR"
+          python tools/release.py status --env "${{ inputs.environment }}"

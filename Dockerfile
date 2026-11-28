@@ -24,3 +24,11 @@ USER 10001:10001
 WORKDIR /app
 EXPOSE 8080 50051
 ENTRYPOINT ["python", "-m", "compiler_optimizer.runtime"]
+# Release provenance (action S), last so local builds keep their layer cache.
+ARG RELEASE_VERSION=dev
+ARG SOURCE_REVISION=unknown
+ARG BUILD_MODE=local
+LABEL org.opencontainers.image.version="${RELEASE_VERSION}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.source="https://github.com/wilsonhuang01/CMPE273_Group11" \
+      compiler-optimizer.build-mode="${BUILD_MODE}"
