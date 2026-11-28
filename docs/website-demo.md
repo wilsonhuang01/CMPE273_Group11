@@ -4,7 +4,8 @@ Defined November 27, 2026. This specifies the first local website milestone;
 the browser UI and Python API are planned in
 [W04–W11](../backlog/website-demo.html). The [W02 API contract](website-api.md)
 defines schemas, fixtures and the AWS handoff record. It does not record a successful live
-website run. W03 will establish the reproducible backend baseline.
+website run. The [W03 backend baseline](website-backend-baseline.md) records
+a live RPC submission, verified downloads and capability limits.
 
 ## Initial example and execution mode
 

@@ -119,3 +119,8 @@ website API and UI remain planned in the [website backlog](../backlog/website-de
 [Browser API and AWS handoff contract](website-api.md) defines W02: versioned
 schemas, synthetic fixtures, durable request identity, RPC evidence mapping and
 pending deployment handoff fields. The API implementation remains W04 work.
+
+[Local website backend baseline](website-backend-baseline.md) records W03: a live
+native ARM64 submission, verified RPC downloads, baseline retention, stable retry
+identity and distinct infrastructure/rejection errors. Its observed evidence and
+limits are separate from the synthetic browser-contract fixtures.

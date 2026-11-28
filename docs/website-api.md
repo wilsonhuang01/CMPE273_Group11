@@ -172,7 +172,8 @@ that a live model call happened. Missing provenance maps to `unavailable`.
 Web-derived/proposed fields are the catalog, readiness, request ledger, sanitized
 checks/metrics/context, normalized state/outcome and download booleans. There is
 no current RPC catalog or aggregated readiness API: use W03's operator-validated
-capability record, fail closed if absent, and revalidate at deployment. A future
+[capability record](website-backend-baseline.md), fail closed if absent, and
+revalidate at deployment. A future
 capability RPC would be an explicit extension. No additional task progress RPC is
 required for this milestone; per-agent activity, retries and percentages are omitted
 unless later supported by task-scoped evidence. W02 adds no backend RPC fields.
