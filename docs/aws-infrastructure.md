@@ -1,10 +1,12 @@
-# AWS infrastructure (action Q)
+# AWS infrastructure (actions Q and R)
 
 Terraform in [`infra/aws`](../infra/aws) defines the AWS foundation that the cloud
 deployment actions build on: network, security groups, IAM roles, encryption keys,
-Secrets Manager entries, budgets and a published environment configuration. It
-does **not** run the optimizer in AWS yet. Storage and messaging (R), images (S),
-the ECS control plane (T) and EC2 workers (U) attach to what this creates.
+Secrets Manager entries, budgets and a published environment configuration. Action R
+adds the managed data services: the S3 artifact bucket, RDS for PostgreSQL, Amazon MQ
+for RabbitMQ and ElastiCache for Valkey, plus credential rotation and an in-VPC service
+check. It does **not** run the optimizer in AWS yet. Images (S), the ECS control plane
+(T) and EC2 workers (U) attach to what this creates.
 
 No cloud resources are deployed by this repository. `./project infra check` runs
 offline. A `plan` reads the account but changes nothing. Only `up` and `down`
@@ -18,8 +20,10 @@ modify AWS, and both stop for confirmation after showing a saved plan.
 | Egress | An S3 gateway endpoint is always present. Interface endpoints (ECR, Logs, CloudWatch, Secrets Manager, KMS, STS, SSM) let private subnets reach AWS without internet access. An optional single NAT gateway provides general egress instead. Bedrock Runtime gets an endpoint when model calls are enabled without NAT. |
 | Security groups | `coordinator`, `scheduler`, `agents`, `worker`, `monitoring`, `data` and `endpoints`, mirroring [compose.yaml](../compose.yaml): agents accept gRPC only from the coordinator; the coordinator accepts gRPC only from the scheduler and workers; the data tier accepts AMQPS/Redis/PostgreSQL only from the coordinator, scheduler and workers; health ports accept only monitoring. **Nothing accepts traffic from outside the VPC.** Client access is added with the control plane (T). |
 | Identity | For each ECS workload (coordinator, scheduler, agents, monitoring), an execution role that injects only that workload's secrets and an empty task role for later actions. An EC2 worker role and instance profile have SSM access (no SSH), read-only ECR access and the CloudWatch agent policy. Agents get `bedrock:InvokeModel` only when `enable_bedrock` is true. Every workload role has a **permissions boundary** that denies IAM changes, opening the network, and deleting keys or secrets. |
-| Encryption | Customer-managed KMS keys for secrets, logs and data (data is used by action R), with rotation enabled. |
-| Secrets | `rabbitmq-password`, `redis-auth-token`, `agent-api-token`, `optimizer-api-token` and `grafana-admin-password` under `cmpe273-optimizer/<env>/`. |
+| Encryption | Customer-managed KMS keys for secrets, logs and data (artifacts, database, broker and cache), with rotation enabled. |
+| Secrets | `rabbitmq-password`, `redis-auth-token`, `agent-api-token`, `optimizer-api-token` and `grafana-admin-password` under `cmpe273-optimizer/<env>/`, plus the RDS-managed database secret. Broker, cache and database credentials rotate every 30 days. |
+| Data services (R) | S3 artifact bucket (no-overwrite policy, versioning, Object Lock in production), RDS for PostgreSQL 16, Amazon MQ for RabbitMQ 3.13 and ElastiCache for Valkey 8.0, all TLS-only in the data tier. Details are in [cloud storage](cloud-storage.md#managed-services-rotation-and-validation-phase-4). |
+| Functions (R) | `rotate-rabbitmq` (in the VPC), `rotate-redis` and `service-check` (in the VPC, coordinator security group), each with its own role under the permissions boundary and a KMS-encrypted log group. |
 | Cost | A monthly AWS Budget filtered on the environment's `CostScope` tag, alerting at 50/80/100% of actual spend and 100% of forecast spend. |
 | Configuration | The SSM parameter `/cmpe273-optimizer/<env>/environment` holds the VPC, subnet, security group, role, key and secret references, plus capacity limits, cost ownership and retention. Later actions read it instead of hard-coding IDs. |
 
@@ -36,7 +40,10 @@ Committed, reviewable settings live in [`infra/aws/config`](../infra/aws/config)
 | Workers (min/desired/max, ceiling) | 0/0/1, 2 | 0/1/2, 4 | 1/2/4, 8 |
 | Data protection | destroy | destroy | retain |
 | Log / artifact / evidence retention (days) | 7 / 7 / 30 | 14 / 14 / 90 | 90 / 90 / 731 |
-| Monthly budget | $50 | $120 | $400 |
+| Database | db.t4g.micro, single-AZ, 1-day backups | db.t4g.micro, single-AZ, 3-day backups | db.t4g.small, Multi-AZ, 14-day backups |
+| Broker | mq.t3.micro, single instance | mq.t3.micro, single instance | mq.m5.large, single instance |
+| Cache | 1 × cache.t4g.micro | 1 × cache.t4g.micro | 2 × cache.t4g.small, Multi-AZ |
+| Monthly budget | $100 | $160 | $650 |
 | Expires | 2026-12-31 | 2026-12-31 | never |
 
 These are the approximate baseline costs of this foundation alone in us-west-2, at
@@ -45,6 +52,13 @@ about $40/month for dev (mostly the NAT gateway), about $80/month for staging
 (10 interface endpoints in one AZ) and about $150/month for production (endpoints
 in two AZs). Each environment also pays about $3/month for KMS keys and $2/month
 for secrets.
+
+The data services add roughly $50/month to dev and to staging (broker about $26,
+database about $14, cache about $10). Production adds about $300/month: the mq.m5.large
+broker is about $210, the Multi-AZ database about $52 and the two cache nodes about $38.
+S3, Lambda and the extra secret cost little at this scale. The budgets were raised to
+match. For a highly available broker, set `broker.deployment_mode` to `CLUSTER_MULTI_AZ`
+(three brokers at roughly three times the cost). The mq.t3 family can't be clustered.
 
 Terraform checks these rules at plan time, before anything changes. Private
 subnets without NAT must have the ECR, Logs and Secrets Manager endpoints. Worker
@@ -70,8 +84,14 @@ $EDITOR infra/aws/config/local.tfvars.json
 ./project infra plan --env staging     # saves var/infra/staging-apply.tfplan and a .txt to review
 ./project infra up --env staging       # re-plans, asks for confirmation, applies, seeds secrets
 ./project infra output --env staging   # environment references and limits as JSON
+./project infra validate --env staging # broker, cache, database and S3 checks from inside the VPC
+./project infra rotate --env staging --secret broker   # rotate now (broker|cache|database|all)
 ./project infra down --env staging     # saved destroy plan, confirmation, teardown
 ```
+
+Before every plan, the launcher builds the two Lambda packages under `var/infra/lambda/`
+(`pip` downloads linux/arm64 wheels pinned by `constraints.txt`, plus the RDS CA bundle).
+Equal inputs give byte-identical archives, so an unchanged tree never shows a Lambda diff.
 
 `bootstrap` writes `infra/aws/config/backend.json`, which is git-ignored. Every
 environment keeps its own state file (`cmpe273-optimizer/<env>/terraform.tfstate`)
@@ -89,7 +109,14 @@ Terraform creates only empty secret containers, so secret values never appear in
 state, plans, tfvars, the repository or release archives. After `up`, the
 launcher asks Secrets Manager to generate a 48-character alphanumeric value for
 each secret that has no value. Values stay in memory and aren't printed, and
-existing values are left alone. At deploy time, each ECS execution role (or the
+existing values are left alone. RDS creates and rotates the database login itself.
+
+The one exception is the broker. Amazon MQ needs a password when it is created, so
+its random bootstrap password is in the encrypted state. `up` copies it into
+`rabbitmq-password` and rotates the broker credential twice, which replaces that
+password before any service connects. `up` then requires the cache AUTH token
+(`ROTATE`, then `SET`). Both steps are skipped when they have already been done.
+Rotation itself is described in [cloud storage](cloud-storage.md#credentials-never-pass-through-terraform). At deploy time, each ECS execution role (or the
 worker instance role) injects only the secrets listed for that workload in
 `workload_secrets`. The launcher also rejects any credential-like key (`password`,
 `token`, `secret` and similar) in committed or local tfvars.
@@ -108,8 +135,16 @@ warning with the matching `down` command. Terraform state history remains in the
 versioned state bucket after teardown. `./project infra bootstrap --destroy`
 removes the bucket only after it has been emptied deliberately.
 
-The artifact and evidence retention values are recorded in the environment
-configuration now. The storage stack (R) will enforce them.
+`artifact_retention_days` is how long S3 keeps superseded or deleted artifact versions.
+In production, `evidence_retention_days` is also the Object Lock retention for every
+artifact version. Live artifacts are never expired automatically.
+
+The data services follow `data_protection` too. In `destroy` environments, the bucket
+is emptied on teardown, and the database is deleted without a final snapshot or retained
+backups. In production, the database has deletion protection and takes a final snapshot,
+and locked artifact versions can't be deleted before their retention ends. Tearing
+production down therefore needs deletion protection turned off first, and a bucket that
+still holds locked objects is left in place.
 
 ## Validation
 
@@ -124,3 +159,9 @@ configuration now. The storage stack (R) will enforce them.
   104 each for staging and production. Plans were also rejected when
   required endpoints were missing or the instance type didn't match the
   architecture. Nothing was applied.
+- With the action R data services, read-only plans produce 150 (dev), 147 (staging)
+  and 148 (production) resources. Nothing has been applied yet, so the managed services,
+  rotation functions and `infra validate` have not run in AWS.
+- `tests/test_infra.py` also checks that no service credential is assigned in Terraform
+  except the broker bootstrap password, the post-apply broker and cache bootstrap,
+  waiting for rotations, and reproducible Lambda packages.

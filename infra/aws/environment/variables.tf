@@ -164,6 +164,68 @@ variable "bedrock_model_patterns" {
   ]
 }
 
+# --- Managed data services (action R) ---------------------------------------
+
+variable "database" {
+  type = object({
+    instance_class           = string
+    multi_az                 = bool
+    allocated_storage_gb     = number
+    max_allocated_storage_gb = number
+    backup_retention_days    = number
+    rotation_days            = number
+  })
+  default = {
+    instance_class           = "db.t4g.micro"
+    multi_az                 = false
+    allocated_storage_gb     = 20
+    max_allocated_storage_gb = 50
+    backup_retention_days    = 1
+    rotation_days            = 30
+  }
+  description = "RDS for PostgreSQL holding coordinator state."
+  validation {
+    condition = (
+      can(regex("^db\\.", var.database.instance_class)) &&
+      var.database.allocated_storage_gb >= 20 &&
+      var.database.max_allocated_storage_gb >= var.database.allocated_storage_gb &&
+      var.database.backup_retention_days >= 1 && var.database.backup_retention_days <= 35 &&
+      var.database.rotation_days >= 1 && var.database.rotation_days <= 365
+    )
+    error_message = "database needs a db.* class, >= 20 GB storage, 1-35 backup days and 1-365 rotation days."
+  }
+}
+
+variable "broker" {
+  type = object({
+    instance_type   = string
+    deployment_mode = string
+  })
+  default     = { instance_type = "mq.t3.micro", deployment_mode = "SINGLE_INSTANCE" }
+  description = "Amazon MQ for RabbitMQ broker size and topology."
+  validation {
+    condition = (
+      contains(["SINGLE_INSTANCE", "CLUSTER_MULTI_AZ"], var.broker.deployment_mode) &&
+      can(regex("^mq\\.(t3|m5|m7g)\\.", var.broker.instance_type)) &&
+      !(var.broker.deployment_mode == "CLUSTER_MULTI_AZ" && startswith(var.broker.instance_type, "mq.t3."))
+    )
+    error_message = "broker needs an mq.t3/m5/m7g instance (RabbitMQ 3.13); clusters cannot use mq.t3."
+  }
+}
+
+variable "cache" {
+  type = object({
+    node_type = string
+    nodes     = number
+  })
+  default     = { node_type = "cache.t4g.micro", nodes = 1 }
+  description = "ElastiCache (Valkey) quarantine cache. Two or more nodes enable Multi-AZ failover."
+  validation {
+    condition     = can(regex("^cache\\.", var.cache.node_type)) && var.cache.nodes >= 1 && var.cache.nodes <= 3
+    error_message = "cache needs a cache.* node type and 1-3 nodes."
+  }
+}
+
 # --- Retention, teardown and cost -----------------------------------------
 
 variable "data_protection" {
@@ -191,13 +253,13 @@ variable "log_retention_days" {
 variable "artifact_retention_days" {
   type        = number
   default     = 30
-  description = "Retention for task artifacts; recorded now, enforced by the storage stack (action R)."
+  description = "Days S3 keeps superseded or deleted artifact versions. Live artifacts never expire."
 }
 
 variable "evidence_retention_days" {
   type        = number
   default     = 365
-  description = "Retention for quarantine and final-decision evidence (action R)."
+  description = "Minimum Object Lock retention for every artifact version in retained environments."
 }
 
 variable "monthly_budget_usd" {

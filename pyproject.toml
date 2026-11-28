@@ -22,6 +22,8 @@ dependencies = [
 bedrock = ["boto3>=1.35,<2"]
 # AWS environment provisioning (action Q): `./project infra`. Terraform is installed separately.
 aws = ["boto3>=1.35,<2"]
+# Shared coordinator state on PostgreSQL/Amazon RDS (action R). SQLite needs nothing extra.
+postgres = ["psycopg[binary]>=3.2,<4"]
 dev = [
     "build>=1.2,<2",
     "clang-format>=18,<19",

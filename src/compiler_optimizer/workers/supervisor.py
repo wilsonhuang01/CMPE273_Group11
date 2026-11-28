@@ -361,6 +361,8 @@ def mlir_main(request):
 
 
 def main():
+    if os.environ.get("COMPILER_OPTIMIZER_STARTUP_GATE") == "1":
+        print("compiler-optimizer-ready-v1", flush=True)
     request = json.load(sys.stdin)
     if request["mode"] == "fuzz":
         from fuzz_runtime import fuzz_main

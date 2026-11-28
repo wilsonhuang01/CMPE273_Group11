@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Planned actions for a local compiler optimizer demo website and subsequent AWS integration, with dependencies and completion criteria.">
+<title>Website demo backlog · Distributed compiler optimizer</title><style>
+:root { color-scheme: light dark; --bg:#fafaf8; --ink:#202725; --muted:#5b6460; --line:#d9dfda; --surface:#f0f3ee; --accent:#245e48; }
+@media (prefers-color-scheme:dark) { :root { --bg:#151a18; --ink:#e2e8e3; --muted:#a7b2ab; --line:#39433c; --surface:#202923; --accent:#a2d4b9; } }
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+main { max-width:1120px; margin:auto; padding:38px 28px 60px; }
+a { color:var(--accent); text-underline-offset:3px; overflow-wrap:anywhere; }
+a:hover { text-decoration-thickness:2px; }
+a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+.eyebrow { color:var(--muted); font-size:12px; letter-spacing:.09em; text-transform:uppercase; }
+h1 { font-size:clamp(27px,4vw,38px); line-height:1.2; letter-spacing:-.025em; margin:10px 0 16px; max-width:850px; }
+h2 { font-size:23px; line-height:1.3; margin:32px 0 10px; }
+h3 { font-size:18px; line-height:1.4; margin:0; }
+h4 { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.055em; margin:0 0 8px; }
+p { margin:0 0 13px; }
+.lead { max-width:860px; font-size:18px; }
+.meta, .dependencies, footer { color:var(--muted); font-size:13px; }
+.overview { display:flex; gap:35px; flex-wrap:wrap; border-block:1px solid var(--line); padding:18px 0; margin:26px 0; }
+.overview strong { display:block; font-size:24px; font-weight:600; color:var(--ink); line-height:1.3; }
+.overview span { color:var(--muted); font-size:13px; }
+.action-body { display:grid; grid-template-columns:1fr 1fr; gap:30px; }
+nav { display:flex; flex-wrap:wrap; gap:8px 24px; margin:25px 0; font-size:14px; }
+.order { padding:16px 20px; background:var(--surface); border-left:3px solid var(--accent); margin:24px 0; }
+.order p:last-child { margin-bottom:0; }
+code { font: .9em ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.controls { display:flex; flex-wrap:wrap; gap:12px; margin:30px 0 5px; align-items:end; }
+.controls label { display:flex; flex-direction:column; gap:5px; color:var(--muted); font-size:13px; }
+.controls label:first-child { flex:1 1 280px; }
+input, select { background:var(--bg); color:var(--ink); padding:10px 12px; border:1px solid var(--line); border-radius:4px; font:inherit; }
+#visible-count { color:var(--muted); font-size:13px; padding-bottom:10px; }
+.action { border-bottom:1px solid var(--line); padding:23px 0 25px; scroll-margin-top:20px; }
+.action-header { display:flex; align-items:baseline; gap:14px; }
+.action-header h3 { flex:1; }
+.number { color:var(--accent); font-size:16px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.number span { color:var(--muted); font-size:12px; }
+.status { color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:2px 8px; font-size:12px; white-space:nowrap; }
+.status.implemented { color:var(--accent); }
+.dependencies { margin:8px 0 18px; }
+.implementation-note { background:var(--surface); padding:15px 18px; font-size:14px; margin:0 0 20px; }
+.implementation-note strong { display:block; margin-bottom:8px; }
+.implementation-note p { margin-bottom:8px; }
+.action-body p { font-size:14px; }
+.files { font-size:13px; margin-top:10px; }
+.files summary { color:var(--muted); cursor:pointer; }
+.files ul { display:flex; flex-wrap:wrap; gap:5px 22px; list-style:none; padding:0; }
+.hardware { margin-top:36px; }
+.hardware li { margin-bottom:10px; }
+footer { border-top:1px solid var(--line); margin-top:32px; padding-top:18px; }
+footer ul { padding-left:20px; }
+[hidden] { display:none !important; }
+@media (max-width:680px) { main { padding:24px 18px 45px; } .action-body { grid-template-columns:1fr; gap:14px; } .action-header { flex-wrap:wrap; gap:8px 12px; } .action-header h3 { flex-basis:75%; } .action-header .status { margin-left:40px; } .overview { gap:25px; } }
+@media print { :root { color-scheme:light; --bg:white; --ink:black; --muted:#444; --line:#bbb; --surface:#eee; --accent:#222; } main { max-width:none; padding:0; } nav,.controls,.files { display:none; } .action { break-inside:avoid; } .group[hidden],.action[hidden] { display:block !important; } a { text-decoration:none; } }
+@media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+
+pre { padding:14px 18px; background:var(--surface); overflow-x:auto; font-size:14px; }
+li { margin-bottom:7px; }
+</style></head><body><main>
+<header><p class="eyebrow">CMPE 273 · Distributed compiler optimizer · Draft November 27, 2026</p>
+<h1>Website demo backlog</h1>
+<p class="lead">Build and validate a local website first, then deploy and connect the same application to AWS, delivered by the deployment branch.</p>
+<p class="meta">Draft implementation plan · <a href="index.html">Main implementation backlog</a> · <a href="../README.md">Project README</a></p></header>
+<div class="overview" aria-label="Backlog summary"><div><strong>14</strong><span>website actions</span></div><div><strong>11</strong><span>actions before AWS handoff</span></div><div><strong>3</strong><span>AWS integration actions</span></div><div><strong>3</strong><span>implemented website actions</span></div></div>
+<nav aria-label="Website backlog areas"><a href="#foundation">Scope and contracts</a><a href="#local-website">Local website</a><a href="#local-delivery">Local delivery</a><a href="#aws-integration">AWS integration</a><a href="#handoff">Ownership and handoff</a></nav>
+<section class="order" aria-label="Dependency overview"><strong>Suggested dependency order</strong>
+<p>W01 → W02/W03 → W04 → W05 → W06 → W07. W08 is an optional upload enhancement. W09 and W10 follow W07; W11 closes the local milestone. W12 → W13 → W14 start after the AWS deployment handoff. Agree on the interface in W02 while infrastructure work proceeds in parallel.</p>
+<p class="meta">W01–W14 are stable website action identifiers. Local milestone: bundled-example submission, truthful task status, results, verified downloads and recorded fallback.</p></section>
+<section aria-label="Proposed application boundary"><h2>Application boundary</h2>
+<p><strong>Browser → same-origin Python web API → existing coordinator gRPC → existing optimizer pipeline.</strong> The coordinator owns durable task execution, verification, worker recovery and final selection. The web API adapts browser requests and task-scoped evidence. Static assets live in <code>web/</code>; the proposed API package lives in <code>src/compiler_optimizer/web/</code>. These locations and web configuration names are proposed work, not existing commands or files.</p>
+<p>Local mode uses <code>127.0.0.1:50052</code>. Remote mode changes server-side endpoint, TLS, secret and connectivity configuration; browser URLs remain relative. AWS integration may also require application/schema reconciliation when the deployment branch lands. Live task history and artifacts stay in their original environment.</p></section>
+<div class="controls" id="controls" hidden><label>Search actions<input id="search" type="search" placeholder="Feature, owner, dependency or completion criterion"></label><label>Status<select id="status"><option value="all">All actions</option><option value="planned">Planned</option><option value="implemented">Implemented</option></select></label><span id="visible-count" role="status" aria-live="polite">14 actions shown</span></div>
+
+<section class="group" id="foundation"><h2>Scope and contracts</h2>
+<article id="action-w01" class="action" data-status="implemented">
+<header class="action-header"><span class="number">01 <span>/ W01</span></span><h3>Define the local demo and supported user journey</h3><span class="status implemented">Implemented</span></header>
+<p class="dependencies"><strong>Depends on:</strong> None<br></p>
+<aside class="implementation-note"><strong>Implemented: local demo specification (W01).</strong><p>The specification selects the bundled C17 sum-array example, plain HTML/CSS/JavaScript with a FastAPI adapter, native CPU capability checks, the supported screens and states, required result evidence and explicit limits. Baseline retention is a valid successful outcome; deterministic rules and replay never imply live model calls.</p><p>This completes the scope definition. API contracts, backend validation and browser implementation remain W02–W11 work.</p><a href="../docs/website-demo.md">Local website demo specification</a></aside>
+<div class="action-body"><div><h4>Work to implement</h4><p>Start with a trusted demo: choose a bundled C/C++ example, preview its source, submit optimization, follow the task, inspect correctness and selection evidence, and download the selected source. Use plain HTML/CSS/JavaScript with a Python FastAPI adapter as the initial implementation choice. Keep package upload as a later action. Document deterministic versus model-backed behavior and supported native targets.</p></div><div><h4>Completion criteria</h4><p>A short demo specification identifies the initial examples, each screen/state, required result fields and unsupported capabilities. Baseline retention is a valid outcome; the UI never promises a speedup, general C/C++ optimization, real GPU execution or live model calls when using rules/replay.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../README.md">README.md</a></li><li><a href="../docs/initial-workload.md">docs/initial-workload.md</a></li><li><a href="../docs/model-agents.md">docs/model-agents.md</a></li><li><a href="../examples/sum-array/submission.json">examples/sum-array/submission.json</a></li></ul></details></article>
+<article id="action-w02" class="action" data-status="implemented">
+<header class="action-header"><span class="number">02 <span>/ W02</span></span><h3>Agree on the browser API and AWS handoff contract</h3><span class="status implemented">Implemented</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w01">W01</a><br></p>
+<aside class="implementation-note"><strong>Implemented: versioned browser and handoff contracts (W02).</strong><p>OpenAPI and JSON Schema define the four browser routes, submission identity, normalized task results and errors. Synthetic fixtures cover queued, running, completed, failed, rejected and baseline-retained tasks. The adapter contract separates existing RPC/report evidence from web-derived fields; no progress RPC extension is required.</p><p>Durable retry identities, polling, verified downloads and pending AWS compatibility, connectivity, TLS and secret-reference fields are documented. Adapter implementation remains W04; AWS validation remains W12–W14.</p><a href="../docs/website-api.md">Browser API and AWS handoff contract</a> · <a href="../contracts/web/v1/openapi.json">OpenAPI</a> · <a href="../contracts/web/v1/schema.json">JSON Schema</a></aside>
+<div class="action-body"><div><h4>Work to implement</h4><p>Define a versioned browser API: GET /api/v1/examples, POST /api/v1/tasks, GET /api/v1/tasks/{id}, and GET /api/v1/tasks/{id}/download. Specify request identity/idempotency, normalized task states, error codes, polling guidance and result schema. Define a server-side optimizer adapter using the existing gRPC contracts. Record the cloud endpoint, TLS trust, authentication, reachability, supported targets and release compatibility as handoff fields to be filled by the AWS branch. Request a task-scoped progress read model only if the existing status RPC lacks required detail.</p></div><div><h4>Completion criteria</h4><p>Commit API schemas and representative queued, running, completed, failed, rejected and baseline-retained fixtures. Separate fields already available through RPC from proposed backend extensions. Both local and future AWS adapters implement the same browser contract; initial drafting and local development require no AWS account or deployed resource.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../src/compiler_optimizer/shared/v1/contracts.proto">src/compiler_optimizer/shared/v1/contracts.proto</a></li><li><a href="../src/compiler_optimizer/client.py">src/compiler_optimizer/client.py</a></li><li><a href="../docs/artifact-transfer.md">docs/artifact-transfer.md</a></li><li><a href="../backlog/index.html#action-t">backlog/index.html#action-t</a></li></ul></details></article>
+<article id="action-w03" class="action" data-status="implemented">
+<header class="action-header"><span class="number">03 <span>/ W03</span></span><h3>Establish a reproducible local backend baseline</h3><span class="status implemented">Implemented</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w01">W01</a><br></p>
+<aside class="implementation-note"><strong>Implemented: live native ARM64 backend baseline (W03).</strong><p>A fresh sum-array submission through host RPC completed with the original retained. Status, selection, correctness, reviews and measurements were inspected through task-scoped downloads; 51 distinct objects passed hash/size checks. Repeating the request preserved task identity.</p><p>A mismatched expected-output fixture produced baseline_rejected diagnostics without selected source. Unknown-task, invalid-ID and unavailable-endpoint cases were recorded separately. Initial Docker disk exhaustion was resolved before successful startup. The record explicitly identifies absent generated/fuzz cases and task-level provider provenance.</p><a href="../docs/website-backend-baseline.md">Reproduction and observed behavior</a> · <a href="../docs/evidence/website-demo-w03.json">Observed evidence record</a></aside>
+<div class="action-body"><div><h4>Work to implement</h4><p>From the repository root with Python 3.11+ and Docker available, run ./project serve. In a separate terminal, submit examples/sum-array through ./project client submit with a stable request file, then inspect status and download evidence. Use host coordinator 127.0.0.1:50052; Compose port 50051 has automatic execution and transfer disabled. Record actual readiness, result fields and failure behavior before connecting the UI.</p></div><div><h4>Completion criteria</h4><p>A fresh local submission reaches a terminal state and its result bundle can be downloaded through RPC without reading coordinator SQLite or artifact directories. Record the exact setup and any unavailable capabilities. Infrastructure startup failure is distinguishable from a task-level rejection.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../project">project</a></li><li><a href="../docs/automatic-execution.md">docs/automatic-execution.md</a></li><li><a href="../docs/local-infrastructure.md">docs/local-infrastructure.md</a></li><li><a href="../docs/artifact-transfer.md">docs/artifact-transfer.md</a></li></ul></details></article>
+</section>
+<section class="group" id="local-website"><h2>Local website</h2>
+<article id="action-w04" class="action" data-status="planned">
+<header class="action-header"><span class="number">04 <span>/ W04</span></span><h3>Build the web API and configurable optimizer adapter</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w02">W02</a>, <a href="#action-w03">W03</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Add the Python web package under src/compiler_optimizer/web/ and web dependencies as an explicit optional extra. Wrap OptimizerClient and existing package preparation/transfer validation rather than shelling out or duplicating orchestration. Serve the static UI and /api/v1 routes from one origin. Proposed web-only settings: WEB_HOST, WEB_PORT, WEB_OPTIMIZER_ENDPOINT, WEB_OPTIMIZER_TLS, WEB_OPTIMIZER_CA and WEB_OPTIMIZER_TOKEN_ENV. Resolve the bearer token only on the server. Add bounded RPC deadlines, safe error mapping and readiness reporting; submit promptly and let the coordinator execute asynchronously.</p></div><div><h4>Completion criteria</h4><p>The API submits a bundled example, returns its task ID, reads status and downloads task-scoped results using local RPC. Invalid identifiers and unavailable RPC return documented errors. Slow compilation does not hold a browser request open. No coordinator database access, Docker socket, compiler invocation or secret appears in the web process/browser beyond the adapter’s required RPC access.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../pyproject.toml">pyproject.toml</a></li><li><a href="../src/compiler_optimizer/client.py">src/compiler_optimizer/client.py</a></li><li><a href="../src/compiler_optimizer/runtime/security.py">src/compiler_optimizer/runtime/security.py</a></li><li><a href="../src/compiler_optimizer/shared/transfer.py">src/compiler_optimizer/shared/transfer.py</a></li></ul></details></article>
+<article id="action-w05" class="action" data-status="planned">
+<header class="action-header"><span class="number">05 <span>/ W05</span></span><h3>Create the example picker and durable submission flow</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w04">W04</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Create web/ assets with an example selector, escaped source preview, target/capability summary, Run button and task permalink. Only accept server-allowlisted example identifiers. Persist a stable submission identity before sending, disable accidental double-click submission, and reconcile an uncertain receipt with the same request identity. Distinguish a deliberate new run from retrying the same request. Keep the page usable by keyboard and on a narrow screen.</p></div><div><h4>Completion criteria</h4><p>A user submits a supported example from the browser and can reload or reopen its task URL. Double-clicks and lost-receipt retries do not create extra optimizer tasks. Unsupported examples/targets show an actionable response. Frontend assets contain neither filesystem paths supplied by users nor credentials.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../src/compiler_optimizer/client.py">src/compiler_optimizer/client.py</a></li><li><a href="../examples/sum-array/submission.json">examples/sum-array/submission.json</a></li><li><a href="../docs/automatic-execution.md">docs/automatic-execution.md</a></li></ul></details></article>
+<article id="action-w06" class="action" data-status="planned">
+<header class="action-header"><span class="number">06 <span>/ W06</span></span><h3>Show task progress, connection state and recoverable errors</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w02">W02</a>, <a href="#action-w05">W05</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Poll task status at a bounded interval with backoff, stop on terminal states and clean up requests on navigation. Display task ID and supported lifecycle states; label unavailable stage detail explicitly. Show agent activity, reviews and recovery events only when exposed by task-scoped backend data. Add the smallest versioned read-only RPC extension if detailed progress is essential; do not scrape logs, invent percentages or infer per-task progress from global metrics. A polling timeout leaves the accepted task running.</p></div><div><h4>Completion criteria</h4><p>Queued, running, completed, rejected, failed, unknown-task and disconnected states are understandable. Browser refresh and temporary connection loss preserve task identity and resume polling. Coordinator restart does not trigger automatic resubmission. A retry control retries the read unless the user explicitly requests a new run.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../src/compiler_optimizer/client.py">src/compiler_optimizer/client.py</a></li><li><a href="../src/compiler_optimizer/runtime/coordinator.py">src/compiler_optimizer/runtime/coordinator.py</a></li><li><a href="../src/compiler_optimizer/runtime/dispatch.py">src/compiler_optimizer/runtime/dispatch.py</a></li><li><a href="../src/compiler_optimizer/monitoring/events.py">src/compiler_optimizer/monitoring/events.py</a></li></ul></details></article>
+<article id="action-w07" class="action" data-status="planned">
+<header class="action-header"><span class="number">07 <span>/ W07</span></span><h3>Present decisions, measured results and verified downloads</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w06">W06</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Build a result view from task-scoped status and report artifacts: proposal/reviewer outcomes, rejection reasons, selected baseline or candidate, available source comparison, runtime and peak-memory statistics, uncertainty and measurement context. Preserve native/emulated/compile-only distinctions and show unavailable measurements as unavailable. Stream downloads through the adapter with existing size/hash checks and bounded temporary storage; serve submitted source as escaped text and artifacts as attachments.</p></div><div><h4>Completion criteria</h4><p>The displayed decision matches the immutable saved report. Baseline retention, correctness rejection, noisy measurements and failed tasks render without fabricated gains or zero-valued missing metrics. A user downloads hash-verified selected source/evidence; unrelated artifact references and oversized downloads are rejected. Original and optimized results are compared only within a compatible measurement context.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../src/compiler_optimizer/client.py">src/compiler_optimizer/client.py</a></li><li><a href="../src/compiler_optimizer/evaluation/report.py">src/compiler_optimizer/evaluation/report.py</a></li><li><a href="../src/compiler_optimizer/evaluation/uncertainty.py">src/compiler_optimizer/evaluation/uncertainty.py</a></li><li><a href="../docs/benchmarking.md">docs/benchmarking.md</a></li><li><a href="../docs/artifact-transfer.md">docs/artifact-transfer.md</a></li></ul></details></article>
+<article id="action-w08" class="action" data-status="planned">
+<header class="action-header"><span class="number">08 <span>/ W08</span></span><h3>Add bounded package upload after bundled examples work</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w05">W05</a>, <a href="#action-w07">W07</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Extend the API with POST /api/v1/packages and a package-reference field on task submission, documenting this additive contract. Accept the documented submission package format, not arbitrary compiler flags or server paths. Reuse the package/manifest validators and RPC transfer format, including existing file/count/size limits. Reject traversal, duplicate paths, links and unsupported encodings. Bound upload time, temporary disk usage and concurrent submissions; clean up rejected/stale packages. Preserve request identity for upload/submission retries.</p></div><div><h4>Completion criteria</h4><p>A valid package with manifest, source and required tests follows the same pipeline as a bundled example. Malformed, oversized and unsupported packages fail before execution, and temporary data is removed. Browser validation is supplementary; server and coordinator validation remain authoritative. Bundled examples remain sufficient for the first demo if this action is deferred.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../src/compiler_optimizer/workers/package.py">src/compiler_optimizer/workers/package.py</a></li><li><a href="../src/compiler_optimizer/shared/manifest.py">src/compiler_optimizer/shared/manifest.py</a></li><li><a href="../src/compiler_optimizer/shared/transfer.py">src/compiler_optimizer/shared/transfer.py</a></li><li><a href="../docs/artifact-transfer.md">docs/artifact-transfer.md</a></li></ul></details></article>
+</section>
+<section class="group" id="local-delivery"><h2>Local delivery</h2>
+<article id="action-w09" class="action" data-status="planned">
+<header class="action-header"><span class="number">09 <span>/ W09</span></span><h3>Prepare honest recorded results and a presentation script</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w07">W07</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Select repeatable live scenarios and capture real task result bundles for a successful decision, correctness rejection and recovery where the existing interfaces expose evidence. Add a clearly labeled recorded-results mode with provenance, target, timestamps and deterministic/model backend identity. Reuse saved evaluation results as a separate historical view, not as the output of a new live task. Document a short presenter walkthrough and expected baseline fallback for tiny workloads.</p></div><div><h4>Completion criteria</h4><p>A presentation can continue with Docker or the coordinator unavailable using explicitly labeled saved evidence. Live failures stay visible rather than silently switching modes. No synthetic animation claims a running agent or recovered worker. Saved artifacts are reviewed for secrets and unnecessary submitted source before inclusion.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../src/compiler_optimizer/evaluation/demo.py">src/compiler_optimizer/evaluation/demo.py</a></li><li><a href="../docs/evaluation.md">docs/evaluation.md</a></li><li><a href="../benchmarks/results/action-p/README.md">benchmarks/results/action-p/README.md</a></li><li><a href="../docs/fault-recovery.md">docs/fault-recovery.md</a></li></ul></details></article>
+<article id="action-w10" class="action" data-status="planned">
+<header class="action-header"><span class="number">10 <span>/ W10</span></span><h3>Package local startup, configuration and access controls</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w04">W04</a>, <a href="#action-w07">W07</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Add a launcher command such as ./project web with loopback binding and an available web port (proposed 8080; Grafana already uses 3000). Document separate coordinator/web processes, installation of web extras, readiness checks and shutdown. Provide non-secret local and remote configuration templates. Apply origin/Host checks and CSRF protection appropriate to state-changing browser requests; never enable wildcard credentialed CORS. Require authenticated web access before any shared/public deployment, since the upstream operator token grants deployment-wide task access.</p></div><div><h4>Completion criteria</h4><p>A clean checkout starts the documented local web demo without AWS credentials or ignored personal files. The launcher reports missing services and port conflicts clearly. No cloud secrets enter git, HTML, browser storage or logs. Remote configuration fails closed on missing TLS/auth settings; an explicitly restricted trusted-team access model is documented rather than claiming per-user tenancy.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../project">project</a></li><li><a href="../tools/project.py">tools/project.py</a></li><li><a href="../pyproject.toml">pyproject.toml</a></li><li><a href="../.env.example">.env.example</a></li><li><a href="../docs/development.md">docs/development.md</a></li><li><a href="../docs/artifact-transfer.md">docs/artifact-transfer.md</a></li></ul></details></article>
+<article id="action-w11" class="action" data-status="planned">
+<header class="action-header"><span class="number">11 <span>/ W11</span></span><h3>Validate and finish the local website milestone</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w06">W06</a>, <a href="#action-w07">W07</a>, <a href="#action-w09">W09</a>, <a href="#action-w10">W10</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Add focused adapter/API tests using contract fixtures, then browser coverage for submission, refresh, error states and downloads. Run a real local end-to-end submission with Docker/RabbitMQ/Redis and record evidence. Exercise duplicate submission, lost receipt, coordinator restart, missing fields, escaped source and broken connections. Include package validation cases if action W08 ships. Check keyboard navigation, narrow layout and the documented clean-start commands. Keep cloud tests opt-in.</p></div><div><h4>Completion criteria</h4><p>The local demo can be run from the written instructions, with one task identity across retries and no acceptance-gate bypass. Existing relevant service/transfer tests and new web checks pass. Record the tested revision and commands. This milestone is complete independently of the AWS branch; upload may remain an explicitly deferred enhancement.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../tests/test_dispatch.py">tests/test_dispatch.py</a></li><li><a href="../tests/test_dispatch_docker.py">tests/test_dispatch_docker.py</a></li><li><a href="../tests/test_runtime.py">tests/test_runtime.py</a></li><li><a href="../docs/development.md">docs/development.md</a></li></ul></details></article>
+</section>
+<section class="group" id="aws-integration"><h2>AWS integration</h2>
+<article id="action-w12" class="action" data-status="planned">
+<header class="action-header"><span class="number">12 <span>/ W12</span></span><h3>Receive and verify the AWS integration handoff</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w02">W02</a>, <a href="#action-w11">W11</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>After the deployment branch is ready, reconcile its released RPC schema with W02. Receive the staging coordinator hostname/port, TLS trust/server name, secret reference and injection method, access policy, private-network entry path, supported native targets, limits, readiness signal and tested image/revision. Confirm which resources are actually deployed rather than relying on backlog status. Choose either a local web server reaching AWS through approved connectivity or an AWS-hosted web adapter; a private endpoint is not automatically reachable from a laptop.</p></div><div><h4>Completion criteria</h4><p>Save a non-secret handoff checklist with resolved values/references, owners and compatibility notes. From the intended web runtime, an authenticated TLS RPC readiness/status probe succeeds; wrong credentials and trust fail. Private networking, web access authentication and certificate ownership are agreed with the AWS branch. No Terraform apply or resource creation is part of this branch’s documentation work.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../backlog/index.html#action-r">backlog/index.html#action-r</a></li><li><a href="../backlog/index.html#action-s">backlog/index.html#action-s</a></li><li><a href="../backlog/index.html#action-t">backlog/index.html#action-t</a></li><li><a href="../backlog/index.html#action-u">backlog/index.html#action-u</a></li><li><a href="../docs/aws-infrastructure.md">docs/aws-infrastructure.md</a></li><li><a href="../docs/autonomous-workers.md">docs/autonomous-workers.md</a></li></ul></details></article>
+<article id="action-w13" class="action" data-status="planned">
+<header class="action-header"><span class="number">13 <span>/ W13</span></span><h3>Connect the same web application to AWS staging</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w12">W12</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Set the adapter’s endpoint, TLS/CA and server-side secret configuration from the handoff. Keep browser calls relative to /api/v1 so the frontend never needs AWS credentials or direct access to RabbitMQ, Redis, databases or artifact buckets. Have the AWS branch own infrastructure, routing, certificates, secret injection and runtime deployment; supply the web package/image, health path and resource requirements from this branch. Merge/rebase compatible application changes deliberately, without copying local .env, state or Terraform outputs containing secrets.</p></div><div><h4>Completion criteria</h4><p>The same UI build submits a new task to the staging coordinator, polls it and downloads verified results without a shared filesystem. Record the remote task ID and native worker context. Local operation still works by switching configuration and restarting the adapter. Environment labels prevent confusing local and staging tasks; task history is scoped by environment, with no implicit migration of local tasks.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../src/compiler_optimizer/client.py">src/compiler_optimizer/client.py</a></li><li><a href="../docs/artifact-transfer.md">docs/artifact-transfer.md</a></li><li><a href="../docs/autonomous-workers.md">docs/autonomous-workers.md</a></li><li><a href="../Dockerfile">Dockerfile</a></li><li><a href="../backlog/index.html#action-t">backlog/index.html#action-t</a></li></ul></details></article>
+<article id="action-w14" class="action" data-status="planned">
+<header class="action-header"><span class="number">14 <span>/ W14</span></span><h3>Run cloud acceptance and document fallback operations</h3><span class="status">Planned</span></header>
+<p class="dependencies"><strong>Depends on:</strong> <a href="#action-w13">W13</a><br></p>
+<div class="action-body"><div><h4>Work to implement</h4><p>Repeat the browser acceptance flow against staging, including denied access, invalid packages if enabled, RPC timeout, expired credentials, coordinator replacement and worker interruption with the AWS owner. Check task identity, immutable decisions and artifact integrity after reconnect. Record cloud revision, target/CPU identity and provenance separately from local measurements. Document secret rotation, endpoint updates, image rollback and switching the web adapter back to local mode. Infrastructure failover, scaling, backup and teardown remain owned by the AWS deployment work.</p></div><div><h4>Completion criteria</h4><p>Save an acceptance record showing browser → web API → AWS coordinator → worker → result download, with no secret leakage and no duplicate task caused by network retry. The local demo remains runnable after rollback. Cloud interruption claims reference actual evidence; untested failover/GPU behavior stays labeled unvalidated. Agree who operates the demo and stops paid resources after use.</p></div></div>
+<details class="files"><summary>Relevant existing source and documentation</summary><ul><li><a href="../backlog/index.html#action-v">backlog/index.html#action-v</a></li><li><a href="../backlog/index.html#action-w">backlog/index.html#action-w</a></li><li><a href="../docs/evaluation.md">docs/evaluation.md</a></li><li><a href="../docs/observability.md">docs/observability.md</a></li><li><a href="../docs/aws-infrastructure.md">docs/aws-infrastructure.md</a></li></ul></details></article>
+</section>
+<section id="handoff"><h2>Ownership and handoff</h2>
+<ul><li><strong>This branch:</strong> browser UI, HTTP API, gRPC adapter, web configuration templates, local launcher, focused checks, image/package requirements and presenter documentation.</li>
+<li><strong>AWS deployment branch:</strong> provisioned network and data services, coordinator/worker deployment, routing/certificates, runtime secret injection, infrastructure monitoring, backup and teardown.</li>
+<li><strong>Joint integration gate:</strong> released contract/revision, reachable staging endpoint, TLS trust, server-side authentication, supported targets, request limits, health checks, task/evidence retention, operator ownership and tested rollback.</li></ul>
+<p>Record handoff values in a proposed <code>docs/website-demo.md</code>: environment name; deployed revision/schema; coordinator endpoint; access path; certificate trust; secret reference (never its value); compatible targets; web runtime placement; upload/download limits; readiness and support contact. Agree these fields early, then fill actual values when staging exists.</p>
+<h2>Existing local baseline commands</h2><p><code>./project</code> names the launcher executable inside the root directory. These commands validate the existing backend; they do not start the planned website.</p>
+<pre><code># Terminal 1 — Docker running; starts/checks dependencies
+./project serve
+
+# Terminal 2 — use a fresh request filename for a deliberate new task
+./project client submit examples/sum-array --request-file var/client/web-demo-request.json --wait
+./project client status TASK_ID
+./project client download TASK_ID --output var/client/web-demo-results</code></pre>
+<p class="meta">Replace TASK_ID with the printed ID; download output must not already exist. Reuse the same request file to retry the same submission. The proposed <code>./project web</code> command is delivered by W10 and is not available merely by adding this backlog.</p></section>
+</main><script>
+
+(() => {
+  const search = document.getElementById('search');
+  const status = document.getElementById('status');
+  const actions = [...document.querySelectorAll('.action')];
+  const groups = [...document.querySelectorAll('.group')];
+  const update = () => {
+    const query = search.value.trim().toLowerCase();
+    let count = 0;
+    actions.forEach(action => {
+      const matches = (status.value === 'all' || action.dataset.status === status.value)
+        && action.textContent.toLowerCase().includes(query);
+      action.hidden = !matches;
+      if (matches) count += 1;
+    });
+    groups.forEach(group => { group.hidden = ![...group.querySelectorAll('.action')].some(action => !action.hidden); });
+    document.getElementById('visible-count').textContent = count + (count === 1 ? ' action shown' : ' actions shown');
+  };
+  const revealHash = () => {
+    const target = document.getElementById(location.hash.slice(1));
+    if (target && target.closest('.group')) {
+      search.value = '';
+      status.value = 'all';
+      update();
+      target.scrollIntoView();
+    }
+  };
+  search.addEventListener('input', update);
+  status.addEventListener('change', update);
+  window.addEventListener('hashchange', revealHash);
+  document.getElementById('controls').hidden = false;
+  revealHash();
+})();
+
+</script></body></html>

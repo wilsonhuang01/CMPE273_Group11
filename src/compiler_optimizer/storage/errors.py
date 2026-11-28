@@ -17,5 +17,17 @@ class StateError(StorageError):
     """An operation is invalid in the current task state."""
 
 
+class ClaimLost(StateError):
+    """This coordinator's dispatch claim expired or was taken over; it may not write."""
+
+
 class ArtifactError(StorageError):
     """An artifact is unsafe, oversized, or fails integrity verification."""
+
+
+class UnavailableError(StorageError, ConnectionError):
+    """A remote storage backend could not be reached; the operation may be retried.
+
+    It is also a ``ConnectionError`` (an ``OSError``), so existing handlers that map local
+    I/O failures to gRPC ``UNAVAILABLE`` treat remote outages the same way.
+    """

@@ -580,7 +580,10 @@ class DockerRunner:
                     ["ps", "--all", "--quiet", "--filter", "label=compiler-optimizer.watchdog"]
                 ).stdout.strip()
                 if remaining:
-                    raise InfrastructureError("measurement blocked by unconfirmed sandbox cleanup")
+                    raise InfrastructureError(
+                        "measurement blocked by unconfirmed sandbox cleanup: "
+                        + remaining.decode("ascii", errors="replace")[:1024]
+                    )
             yield
 
     def measurement_window(self):
@@ -652,6 +655,15 @@ class DockerRunner:
             else ["--tmpfs", "/work/run:rw,exec,nosuid,size=32m,mode=0755"]
         )
         try:
+            try:
+                guard.start()
+            except (RuntimeError, OSError) as error:
+                raise InfrastructureError(
+                    f"cannot arm external watchdog; inspect {guard.directory}"
+                ) from error
+            # Cover process loss during create/inspect, including a Docker CLI
+            # failure after the daemon has already created the container.
+            created = True
             self._command(
                 [
                     "create",
@@ -709,19 +721,8 @@ class DockerRunner:
                     "--memory-swap",
                     f"{memory}m",
                     "--pids-limit",
-                    "64"
-                    if compile_mode
-                    else "6"
-                    if harness
-                    else "4"
-                    if parallel
-                    else "8"
-                    if fuzz_mode
-                    else "4"
-                    if self.target == "linux-riscv64"
-                    else "3"
-                    if self.measurement_version == 2
-                    else "2",
+                    "64",  # runc needs thread headroom before the supervisor starts.
+                    *([] if trusted_command else ["--env", "COMPILER_OPTIMIZER_STARTUP_GATE=1"]),
                     "--ulimit",
                     "core=0",
                     "--tmpfs",
@@ -732,7 +733,6 @@ class DockerRunner:
                     *([] if trusted_command is None else trusted_command[1:]),
                 ]
             )
-            created = True
             if lease_token is not None and lease_token in self._recovery_cancelled:
                 raise InfrastructureError("execution lease was cancelled")
             if lease is not None and lease.get("assert_live"):
@@ -750,6 +750,7 @@ class DockerRunner:
                 compile_mode,
                 mounts,
                 cpu_id,
+                startup=True,
                 **({"fuzz_mode": True} if fuzz_mode else {}),
                 **({"parallel": True} if parallel else {}),
                 **({"perf": True} if perf else {}),
@@ -759,16 +760,47 @@ class DockerRunner:
             if lease is not None and lease.get("assert_live"):
                 lease["assert_live"]()
             try:
-                guard.start()
-            except (RuntimeError, OSError) as error:
-                raise InfrastructureError(
-                    f"cannot arm external watchdog; inspect {guard.directory}"
-                ) from error
-            try:
                 if lease is not None and lease.get("assert_live"):
                     lease["assert_live"]()
+
+                def ready():
+                    # No workload bytes reach the supervisor until the execution
+                    # budget is restored and Docker confirms the complete policy.
+                    pids = (
+                        64
+                        if compile_mode
+                        else 6
+                        if harness
+                        else 4
+                        if parallel
+                        else 8
+                        if fuzz_mode
+                        else 4
+                        if self.target == "linux-riscv64"
+                        else 3
+                        if self.measurement_version == 2
+                        else 2
+                    )
+                    self._command(["update", "--pids-limit", str(pids), name])
+                    self._validate_container(
+                        name,
+                        memory,
+                        compile_mode,
+                        mounts,
+                        cpu_id,
+                        fuzz_mode=fuzz_mode,
+                        parallel=parallel,
+                        perf=perf,
+                        harness=harness,
+                        cpu_ids=cpu_ids,
+                    )
+
                 completed, stopped = self._attach(
-                    name, json.dumps(payload).encode(), guard, wall_seconds=payload["wall_seconds"]
+                    name,
+                    json.dumps(payload).encode(),
+                    guard,
+                    wall_seconds=payload["wall_seconds"],
+                    **({"on_ready": ready} if trusted_command is None else {}),
                 )
                 if stopped:
                     stop_reason = stopped
@@ -954,6 +986,7 @@ class DockerRunner:
         perf=False,
         harness=False,
         cpu_ids=None,
+        startup=False,
     ):
         try:
             config = json.loads(
@@ -972,6 +1005,7 @@ class DockerRunner:
                 perf=perf,
                 harness=harness,
                 cpu_ids=cpu_ids,
+                startup=startup,
             )
         except (ValueError, TypeError, KeyError) as error:
             raise InfrastructureError(str(error)) from error

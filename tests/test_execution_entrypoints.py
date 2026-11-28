@@ -153,6 +153,7 @@ def test_cache_outage_is_bounded_before_any_execution(tmp_path):
         RECOVERY_SCOPE.reset(token)
 
 
+@pytest.mark.sqlite_only
 def test_populated_schema_eight_upgrade_preserves_frozen_recovery(tmp_path):
     values = setup(tmp_path)
     repo, runner, _, task, _, recovery, coordinator, _ = values
@@ -196,6 +197,7 @@ def test_populated_schema_eight_upgrade_preserves_frozen_recovery(tmp_path):
         for table in (
             "agent_rpc_calls",
             "debate_events",
+            "dispatch_claims",
             "debate_slots",
             "debate_runs",
             "cohort_work",

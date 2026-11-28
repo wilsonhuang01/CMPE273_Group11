@@ -1,7 +1,7 @@
 include CMakeLists.txt .clang-format .editorconfig
 include Dockerfile .dockerignore compose.yaml .env.example
 include project
-recursive-include docs *.md
+recursive-include docs *.md *.json
 recursive-include backlog *.html
 recursive-include benchmarks *.md *.json *.csv *.html *.zip
 recursive-include examples *.json *.c *.cpp *.cu *.in *.out
@@ -12,3 +12,5 @@ recursive-include monitoring *.yml *.json enabled_plugins
 recursive-include src *.proto *.json *.pyi *.sql
 
 include constraints.txt
+
+recursive-include contracts *.json

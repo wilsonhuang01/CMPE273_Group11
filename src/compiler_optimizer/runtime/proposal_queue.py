@@ -2,10 +2,12 @@
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 
 import pika
 
 from compiler_optimizer.monitoring.events import emit
+from compiler_optimizer.runtime.connections import rabbitmq_parameters
 from compiler_optimizer.runtime.dependencies import DEAD_EXCHANGE, declare_topology
 from compiler_optimizer.shared.agent_roles import role_spec
 from compiler_optimizer.shared.manifest import ContractError, require
@@ -24,19 +26,12 @@ class RabbitProposalQueue:
         self.settings, self.delivery_timeout = settings, delivery_timeout
 
     def _connect(self):
-        settings = self.settings
         return pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host=settings.rabbitmq_host,
-                port=settings.rabbitmq_port,
-                virtual_host=settings.rabbitmq_vhost,
-                credentials=pika.PlainCredentials(
-                    settings.rabbitmq_user, settings.rabbitmq_password
-                ),
+            rabbitmq_parameters(
+                self.settings,
                 socket_timeout=3,
                 stack_timeout=5,
                 blocked_connection_timeout=5,
-                connection_attempts=1,
                 heartbeat=30,
             )
         )
@@ -188,7 +183,8 @@ class RabbitProposalQueue:
                             measurements={"remaining_ready": remaining},
                         )
                     with ThreadPoolExecutor(max_workers=1) as executor:
-                        future = executor.submit(process, incoming)
+                        # Keep the caller's dispatch claim, so result commits stay fenced.
+                        future = executor.submit(copy_context().run, process, incoming)
                         while not future.done():
                             connection.process_data_events(time_limit=0.2)
                         result = future.result()

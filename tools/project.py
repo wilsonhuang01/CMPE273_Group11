@@ -87,6 +87,7 @@ def package(destination, evidence, *, agent_states=(), images=()):
         "docs",
         "infra",
         "backlog",
+        "contracts",
         "examples",
         "benchmarks",
         "monitoring",

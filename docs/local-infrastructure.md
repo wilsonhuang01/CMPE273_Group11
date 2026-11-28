@@ -92,6 +92,8 @@ Runtime services also support `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`,
 `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`,
 `STATE_DIRECTORY`, `HEALTH_HOST`, `HEALTH_PORT`, `GRPC_PORT`,
 `COORDINATOR_HEALTH_URL`, and `PROBE_INTERVAL_SECONDS` when launched directly.
+TLS and S3 artifact settings for managed services are described in
+[cloud storage](cloud-storage.md).
 Compose provides container hostnames and uses fixed internal ports independently
 of published host-port overrides. Probe intervals must be between 1 and 60 seconds.
 

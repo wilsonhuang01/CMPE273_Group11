@@ -107,3 +107,20 @@ streaming upload, task-scoped downloads and TLS/bearer authentication.
 capability registration, durable job dispatch, execution leases and cleanup.
 [AWS infrastructure](aws-infrastructure.md) covers the Terraform environments,
 `./project infra` provisioning/teardown, secrets, budgets and retention rules.
+[Cloud storage](cloud-storage.md) covers action R: the S3 artifact backend, the
+PostgreSQL repository, fenced dispatch claims for several coordinators, TLS to
+Amazon MQ/ElastiCache, the managed-service Terraform, credential rotation and the
+engine validation (`./project infra validate`).
+
+[Local website demo specification](website-demo.md) defines W01: the initial
+bundled example, browser journey, result evidence and capability limits. The
+website API and UI remain planned in the [website backlog](../backlog/website-demo.html).
+
+[Browser API and AWS handoff contract](website-api.md) defines W02: versioned
+schemas, synthetic fixtures, durable request identity, RPC evidence mapping and
+pending deployment handoff fields. The API implementation remains W04 work.
+
+[Local website backend baseline](website-backend-baseline.md) records W03: a live
+native ARM64 submission, verified RPC downloads, baseline retention, stable retry
+identity and distinct infrastructure/rejection errors. Its observed evidence and
+limits are separate from the synthetic browser-contract fixtures.

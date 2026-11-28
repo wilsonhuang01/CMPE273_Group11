@@ -1,0 +1,484 @@
+{
+  "schema_version": 1,
+  "kind": "observed_local_backend_baseline",
+  "local_date": "2026-11-27",
+  "timezone": "America/Los_Angeles",
+  "source_revision": "7e7dc944ff79ac60b9c5fcfd779838bc4748bab8",
+  "scope": "Local RPC backend only; no website, AWS or live model validation. Historical snapshot; recheck readiness before reuse.",
+  "configuration": {
+    "coordinator_endpoint": "127.0.0.1:50052",
+    "health_endpoint": "http://127.0.0.1:18083/readyz",
+    "state_directory": "var/website-demo/w03/coordinator",
+    "execution_backend": "local",
+    "agent_backend": "local",
+    "model_provider": "none",
+    "tls": false,
+    "authentication": "loopback development default"
+  },
+  "startup": {
+    "first_attempt": "failed before host coordinator startup",
+    "failure": "Docker VM disk full; agent certificate copy returned ENOSPC; compiler package installation also failed",
+    "recovery": "Removed unused build cache; reran the same serve command successfully",
+    "compose_checks": "coordinator, scheduler, worker and six agent services ready; execution disabled in Compose intake",
+    "monitoring_checks": "Prometheus scrapes and Grafana dashboard passed"
+  },
+  "readiness": {
+    "checked_at": "2026-11-28T00:57:39.314671+00:00",
+    "response": {
+      "service": "coordinator",
+      "infrastructure_ready": true,
+      "execution_enabled": true,
+      "capabilities": [
+        "durable_intake",
+        "automatic_submission_execution"
+      ],
+      "checks": {
+        "rabbitmq": "ok",
+        "redis": "ok",
+        "storage": "ok"
+      }
+    }
+  },
+  "native_capability": {
+    "checked_at": "2026-11-28T00:58:48.903096+00:00",
+    "host": {
+      "system": "Darwin",
+      "machine": "arm64",
+      "python": "3.13.7"
+    },
+    "target": "linux-aarch64",
+    "native_execution": true,
+    "container_platform": "linux/arm64",
+    "compiler": {
+      "executable": "clang",
+      "version": "18.1.3",
+      "image_digest": "sha256:ed48bc3e0af939dd0196aa3c2d92635dbd356832cc47368d73058162bc55ebd2",
+      "language": "c17",
+      "target": "linux-aarch64",
+      "flags": [
+        "-std=c17",
+        "-O2",
+        "-march=armv8-a",
+        "-mtune=generic",
+        "-Wall",
+        "-Wextra"
+      ]
+    },
+    "engine_architecture": "aarch64",
+    "dependencies": {
+      "grpcio": "1.85.3",
+      "protobuf": "6.33.6",
+      "pika": "1.5.0",
+      "redis": "6.4.0",
+      "jsonschema": "4.26.0"
+    }
+  },
+  "submission": {
+    "task_id": "b5c5ddbd-29b6-4e81-bb9c-e0cf3dc1cc44",
+    "package_sha256": "32b985fc0784e68f174c12ae142c436dacd22cc192a4d1150a86b9b16e4cbc06",
+    "receipt": {
+      "accepted_message_id": "30dbdf4f-bde5-45eb-b2ea-52747ee3ecf9",
+      "meta": {
+        "created_at_unix_ms": "1795827460187",
+        "message_id": "74118e2c-b35c-4ce2-a4f4-43f5ec9bf060",
+        "schema_version": 1,
+        "task_id": "b5c5ddbd-29b6-4e81-bb9c-e0cf3dc1cc44"
+      }
+    },
+    "retry_identity_preserved": true,
+    "retry_receipt": {
+      "accepted_message_id": "30dbdf4f-bde5-45eb-b2ea-52747ee3ecf9",
+      "meta": {
+        "created_at_unix_ms": "1795827505625",
+        "message_id": "62d48dab-0019-48b0-9e8c-84e7b218c432",
+        "schema_version": 1,
+        "task_id": "b5c5ddbd-29b6-4e81-bb9c-e0cf3dc1cc44"
+      }
+    },
+    "observations": [
+      {
+        "observed_at": "2026-11-28T00:57:40.421295+00:00",
+        "status": "accepted",
+        "stage": "queued"
+      },
+      {
+        "observed_at": "2026-11-28T00:57:42.645214+00:00",
+        "status": "running",
+        "stage": "baseline"
+      },
+      {
+        "observed_at": "2026-11-28T00:57:44.903096+00:00",
+        "status": "running",
+        "stage": "optimizing"
+      },
+      {
+        "observed_at": "2026-11-28T00:58:25.181864+00:00",
+        "status": "completed",
+        "stage": "completed"
+      }
+    ],
+    "status_rpc_fields": [
+      "report",
+      "report_json",
+      "selected_source",
+      "stage",
+      "status",
+      "task_id"
+    ],
+    "status_rpc": {
+      "report": {
+        "key": "sha256/32/32af09fe4155ccffa846631c35fd31019f58570b30c76a8bceca6ded7320cdf0",
+        "sha256": "32af09fe4155ccffa846631c35fd31019f58570b30c76a8bceca6ded7320cdf0",
+        "size_bytes": "3643"
+      },
+      "report_json": "{\"baseline_job_id\": \"66a2d243-c6f1-4824-95df-5200c821b0ff\", \"candidates\": [{\"benchmark_report\": {\"key\": \"sha256/2f/2f706dbcd20b230d518a77203759cd8b92ed5584ed7b965570eb22b66e8b785f\", \"sha256\": \"2f706dbcd20b230d518a77203759cd8b92ed5584ed7b965570eb22b66e8b785f\", \"size_bytes\": 1920}, \"benchmark_run_id\": \"0295df12-37a1-4656-872d-0226e6ffa495\", \"correctness_report\": {\"key\": \"sha256/67/6796f81c0567bb81a0fdc84a1ff4868eecd8694180b05dc41ea54982f0144dd4\", \"sha256\": \"6796f81c0567bb81a0fdc84a1ff4868eecd8694180b05dc41ea54982f0144dd4\", \"size_bytes\": 1655}, \"evaluation\": {\"key\": \"sha256/47/4750fd6bfbdedbef665386290ba8b61b0918482da1e049cfd78881fab5f68a01\", \"sha256\": \"4750fd6bfbdedbef665386290ba8b61b0918482da1e049cfd78881fab5f68a01\", \"size_bytes\": 9589}, \"proposal_id\": \"17fdac55-3ec9-4088-bb65-b1a67371693c\", \"reasons\": [\"benchmark_not_qualified\"], \"role\": \"performance\", \"source_sha256\": \"0fa4938999263eeab7bd68a5ab7d217817880d496391f2ff2d6290c922fa4a7e\", \"state\": \"excluded\", \"statistics\": null, \"verification_attempt\": 1, \"verification_job_id\": \"2ee0d719-1019-40f6-92e3-7f58d3b34ab1\", \"votes\": {\"correctness\": \"approve\", \"critic\": \"approve\"}}, {\"evaluation\": {\"key\": \"sha256/88/880db5d1815428f4915769d38ad01cc2aff9f2d26f472b2ba08f3a5ea2c52562\", \"sha256\": \"880db5d1815428f4915769d38ad01cc2aff9f2d26f472b2ba08f3a5ea2c52562\", \"size_bytes\": 218}, \"proposal_id\": \"4811e2e3-7d10-4c9b-b56e-4c58460270a6\", \"reasons\": [\"generation_failed\"], \"role\": \"memory\", \"state\": \"excluded\", \"statistics\": null, \"votes\": {}}, {\"benchmark_report\": {\"key\": \"sha256/81/814d81759a3b5f0f18bba0754e6fc3da052422f47255c216438ab87d0762e0e3\", \"sha256\": \"814d81759a3b5f0f18bba0754e6fc3da052422f47255c216438ab87d0762e0e3\", \"size_bytes\": 1908}, \"benchmark_run_id\": \"f0d4660b-0021-4c56-97ea-b6b0a01b69ff\", \"correctness_report\": {\"key\": \"sha256/23/230801c31bf2ab1eb4c2c8e698aa56ec17fb217bf8b58be2a28ef402c60ee1e2\", \"sha256\": \"230801c31bf2ab1eb4c2c8e698aa56ec17fb217bf8b58be2a28ef402c60ee1e2\", \"size_bytes\": 1655}, \"evaluation\": {\"key\": \"sha256/b2/b2ac585cf0452839f2866b4edbfa6eaa7d21565f6f6ad36bb5c0dea52fec72d5\", \"sha256\": \"b2ac585cf0452839f2866b4edbfa6eaa7d21565f6f6ad36bb5c0dea52fec72d5\", \"size_bytes\": 9599}, \"proposal_id\": \"5bd22b8c-bc4e-42ed-85c1-f358c38f5559\", \"reasons\": [\"benchmark_not_qualified\"], \"role\": \"architecture\", \"source_sha256\": \"9121a1223df00c24afb79f52ec62acf14ab507dfec3ef6da3c1c6cb0b8ba3a4c\", \"state\": \"excluded\", \"statistics\": null, \"verification_attempt\": 1, \"verification_job_id\": \"f43f0a4b-184b-4860-88c2-b3049d0b6e29\", \"votes\": {\"correctness\": \"approve\", \"critic\": \"approve\"}}], \"policy\": {\"key\": \"sha256/da/daa89d77a793b97307e3c720568a5874d337ab780ead5005603bc3685918741a\", \"sha256\": \"daa89d77a793b97307e3c720568a5874d337ab780ead5005603bc3685918741a\", \"size_bytes\": 158}, \"ranking\": [], \"reason\": \"no_reliable_improvement\", \"schema_version\": 1, \"selected_attempt\": 1, \"selected_job_id\": \"66a2d243-c6f1-4824-95df-5200c821b0ff\", \"selected_proposal_id\": null, \"selected_source\": {\"key\": \"sha256/f3/f371c6030c006c93fd828ef4b6c88329b0796eb2c0b43f77a0867f857548aec0\", \"sha256\": \"f371c6030c006c93fd828ef4b6c88329b0796eb2c0b43f77a0867f857548aec0\", \"size_bytes\": 603}, \"settings\": {\"alpha\": 0.05, \"maximum_candidates\": 6, \"memory_weight\": 0.3, \"minimum_weighted_gain\": 0.01, \"performance_weight\": 0.7, \"schema_version\": 1, \"tie_digits\": 6}, \"status\": \"retained_baseline\", \"task_id\": \"b5c5ddbd-29b6-4e81-bb9c-e0cf3dc1cc44\", \"tie_breakers\": [\"weighted_lower_bound\", \"weighted_point_score\", \"worst_case_lower_bound\", \"lower_peak_memory_ratio\", \"lower_runtime_ratio\", \"source_sha256\", \"proposal_id\"], \"voting_rule\": \"correctness_and_critic_unanimous_no_author_vote\"}",
+      "selected_source": {
+        "bundle": {
+          "key": "sha256/f3/f371c6030c006c93fd828ef4b6c88329b0796eb2c0b43f77a0867f857548aec0",
+          "sha256": "f371c6030c006c93fd828ef4b6c88329b0796eb2c0b43f77a0867f857548aec0",
+          "size_bytes": "603"
+        },
+        "version": 1
+      },
+      "stage": "completed",
+      "status": "completed",
+      "task_id": "b5c5ddbd-29b6-4e81-bb9c-e0cf3dc1cc44"
+    },
+    "final_decision": "retained_baseline",
+    "reason": "no_reliable_improvement",
+    "selected_source_matches_bundled_main": true,
+    "download_verification": {
+      "catalog_entries": 69,
+      "unique_objects_verified": 51,
+      "total_verified_bytes": 1851326,
+      "artifact_kinds": [
+        "agent-input",
+        "agent-output",
+        "benchmark",
+        "binary",
+        "candidate-evaluation",
+        "correctness",
+        "log",
+        "measurement-plan",
+        "package",
+        "recovery-outcome",
+        "recovery-policy",
+        "selection-patch",
+        "selection-plan",
+        "selection-policy",
+        "selection-result",
+        "source"
+      ]
+    },
+    "candidates": [
+      {
+        "role": "performance",
+        "proposal_id": "17fdac55-3ec9-4088-bb65-b1a67371693c",
+        "state": "excluded",
+        "reasons": [
+          "benchmark_not_qualified"
+        ],
+        "correctness": {
+          "reference": {
+            "key": "sha256/67/6796f81c0567bb81a0fdc84a1ff4868eecd8694180b05dc41ea54982f0144dd4",
+            "sha256": "6796f81c0567bb81a0fdc84a1ff4868eecd8694180b05dc41ea54982f0144dd4",
+            "size_bytes": 1655
+          },
+          "status": "verified",
+          "sanitizer": "undefined",
+          "checks": [
+            {
+              "binary_sha256": "401ccbc4a8246656d630f223b6c001a4c08e1c56b75e4cfe875ada06fa129ccc",
+              "phase": "baseline_compile"
+            },
+            {
+              "binary_sha256": "bee2b726da06937483c4aa0f25bf9f3726fee56804d6cabf44f330472a944891",
+              "phase": "candidate_compile"
+            },
+            {
+              "kind": "supplied",
+              "passed": true,
+              "phase": "differential",
+              "test_id": "empty"
+            },
+            {
+              "kind": "supplied",
+              "passed": true,
+              "phase": "differential",
+              "test_id": "mixed"
+            },
+            {
+              "binary_sha256": "8afef909078f87316018de6da9658ac6701f6a0d503b867d3e39d3e1e112a650",
+              "phase": "baseline_sanitizer_compile"
+            },
+            {
+              "binary_sha256": "7a3648f9cb03ff55688663ed668796c7fc1c93249b44257cc809c79d05a75dc5",
+              "phase": "candidate_sanitizer_compile"
+            },
+            {
+              "passed": true,
+              "phase": "sanitizer",
+              "test_id": "empty"
+            },
+            {
+              "passed": true,
+              "phase": "sanitizer",
+              "test_id": "mixed"
+            }
+          ]
+        },
+        "reviews": {
+          "correctness": "approve",
+          "critic": "approve"
+        },
+        "benchmark": {
+          "reference": {
+            "key": "sha256/2f/2f706dbcd20b230d518a77203759cd8b92ed5584ed7b965570eb22b66e8b785f",
+            "sha256": "2f706dbcd20b230d518a77203759cd8b92ed5584ed7b965570eb22b66e8b785f",
+            "size_bytes": 1920
+          },
+          "analysis": {
+            "cases": {
+              "mixed": {
+                "baseline_median_memory_bytes": 1474560,
+                "baseline_median_seconds": 0.023206791999655252,
+                "baseline_peak_memory_bytes": 1474560,
+                "baseline_relative_mad": 0.03916780054357104,
+                "candidate_median_memory_bytes": 1474560,
+                "candidate_median_seconds": 0.022506666000481346,
+                "candidate_peak_memory_bytes": 1474560,
+                "candidate_relative_mad": 0.01872036494452295,
+                "median_gain_lower_bound": -0.02807447701438881,
+                "median_relative_gain": 0.025019944175243114,
+                "one_sided_sign_p": 0.996307373046875,
+                "per_case_alpha": 0.05,
+                "reasons": [
+                  "no_reliable_improvement"
+                ],
+                "wins_above_minimum_gain": 3
+              }
+            },
+            "decision": "retain_baseline",
+            "qualified": false,
+            "reasons": [
+              "workload_gate_failed"
+            ]
+          },
+          "plan": {
+            "alpha": 0.05,
+            "cpu_id": null,
+            "maximum_memory_regression": 0.05,
+            "maximum_relative_mad": 0.1,
+            "minimum_relative_improvement": 0.05,
+            "minimum_sample_seconds": 0.01,
+            "repetitions": 15,
+            "schema_version": 1,
+            "seed": 273,
+            "warmups": 2
+          }
+        }
+      },
+      {
+        "role": "memory",
+        "proposal_id": "4811e2e3-7d10-4c9b-b56e-4c58460270a6",
+        "state": "excluded",
+        "reasons": [
+          "generation_failed"
+        ],
+        "generation": {
+          "message": "rule backend abstained: streaming requires stdio.h and stdlib.h",
+          "proposal_id": "4811e2e3-7d10-4c9b-b56e-4c58460270a6",
+          "reason": "generation_abstained",
+          "task_id": "b5c5ddbd-29b6-4e81-bb9c-e0cf3dc1cc44"
+        }
+      },
+      {
+        "role": "architecture",
+        "proposal_id": "5bd22b8c-bc4e-42ed-85c1-f358c38f5559",
+        "state": "excluded",
+        "reasons": [
+          "benchmark_not_qualified"
+        ],
+        "correctness": {
+          "reference": {
+            "key": "sha256/23/230801c31bf2ab1eb4c2c8e698aa56ec17fb217bf8b58be2a28ef402c60ee1e2",
+            "sha256": "230801c31bf2ab1eb4c2c8e698aa56ec17fb217bf8b58be2a28ef402c60ee1e2",
+            "size_bytes": 1655
+          },
+          "status": "verified",
+          "sanitizer": "undefined",
+          "checks": [
+            {
+              "binary_sha256": "401ccbc4a8246656d630f223b6c001a4c08e1c56b75e4cfe875ada06fa129ccc",
+              "phase": "baseline_compile"
+            },
+            {
+              "binary_sha256": "71246bc60135065b1d95b9f56f146ccc1e6d4a8ab6cdd3f5426b04f7eb40c217",
+              "phase": "candidate_compile"
+            },
+            {
+              "kind": "supplied",
+              "passed": true,
+              "phase": "differential",
+              "test_id": "empty"
+            },
+            {
+              "kind": "supplied",
+              "passed": true,
+              "phase": "differential",
+              "test_id": "mixed"
+            },
+            {
+              "binary_sha256": "8afef909078f87316018de6da9658ac6701f6a0d503b867d3e39d3e1e112a650",
+              "phase": "baseline_sanitizer_compile"
+            },
+            {
+              "binary_sha256": "c21933e91f8be29b6d2b13457d9996ec161a37ee0a2c3ef09fc2f9fc15e0796d",
+              "phase": "candidate_sanitizer_compile"
+            },
+            {
+              "passed": true,
+              "phase": "sanitizer",
+              "test_id": "empty"
+            },
+            {
+              "passed": true,
+              "phase": "sanitizer",
+              "test_id": "mixed"
+            }
+          ]
+        },
+        "reviews": {
+          "correctness": "approve",
+          "critic": "approve"
+        },
+        "benchmark": {
+          "reference": {
+            "key": "sha256/81/814d81759a3b5f0f18bba0754e6fc3da052422f47255c216438ab87d0762e0e3",
+            "sha256": "814d81759a3b5f0f18bba0754e6fc3da052422f47255c216438ab87d0762e0e3",
+            "size_bytes": 1908
+          },
+          "analysis": {
+            "cases": {
+              "mixed": {
+                "baseline_median_memory_bytes": 1474560,
+                "baseline_median_seconds": 0.02249337499961257,
+                "baseline_peak_memory_bytes": 1474560,
+                "baseline_relative_mad": 0.011670102892481505,
+                "candidate_median_memory_bytes": 1474560,
+                "candidate_median_seconds": 0.022583207999559818,
+                "candidate_peak_memory_bytes": 1474560,
+                "candidate_relative_mad": 0.012872750396851576,
+                "median_gain_lower_bound": -0.01965294356566094,
+                "median_relative_gain": -0.005393632251140534,
+                "one_sided_sign_p": 1.0,
+                "per_case_alpha": 0.05,
+                "reasons": [
+                  "no_reliable_improvement"
+                ],
+                "wins_above_minimum_gain": 0
+              }
+            },
+            "decision": "retain_baseline",
+            "qualified": false,
+            "reasons": [
+              "workload_gate_failed"
+            ]
+          },
+          "plan": {
+            "alpha": 0.05,
+            "cpu_id": null,
+            "maximum_memory_regression": 0.05,
+            "maximum_relative_mad": 0.1,
+            "minimum_relative_improvement": 0.05,
+            "minimum_sample_seconds": 0.01,
+            "repetitions": 15,
+            "schema_version": 1,
+            "seed": 273,
+            "warmups": 2
+          }
+        }
+      }
+    ],
+    "proposal_agent_provenance_present": {
+      "5bd22b8c-bc4e-42ed-85c1-f358c38f5559": false,
+      "17fdac55-3ec9-4088-bb65-b1a67371693c": false
+    }
+  },
+  "failure_probes": {
+    "unknown-task": {
+      "exit_code": 1,
+      "error": {
+        "error": "NOT_FOUND",
+        "message": "coordinator request failed"
+      }
+    },
+    "unavailable": {
+      "exit_code": 1,
+      "error": {
+        "error": "UNAVAILABLE",
+        "message": "coordinator request failed"
+      }
+    },
+    "invalid-task": {
+      "exit_code": 1,
+      "error": {
+        "error": "ValueError",
+        "message": "invalid task ID"
+      }
+    },
+    "baseline_rejection": {
+      "task_id": "ea8826fb-d499-4c36-a344-4241dc58b746",
+      "status_rpc": {
+        "report_json": "{\"task_id\": \"ea8826fb-d499-4c36-a344-4241dc58b746\", \"status\": \"failed\", \"stage\": \"failed\", \"execution\": {\"attempts\": 1, \"available_at_ms\": 0, \"error_code\": null, \"finished\": 1}, \"reason\": \"baseline_rejected\", \"failure\": \"OUTPUT_MISMATCH\"}",
+        "stage": "failed",
+        "status": "failed",
+        "task_id": "ea8826fb-d499-4c36-a344-4241dc58b746"
+      },
+      "summary": {
+        "task_id": "ea8826fb-d499-4c36-a344-4241dc58b746",
+        "status": "failed",
+        "stage": "failed",
+        "execution": {
+          "attempts": 1,
+          "available_at_ms": 0,
+          "error_code": null,
+          "finished": 1
+        },
+        "reason": "baseline_rejected",
+        "failure": "OUTPUT_MISMATCH"
+      },
+      "observations": [
+        {
+          "observed_at": "2026-11-28T00:58:27.096564+00:00",
+          "status": "accepted",
+          "stage": "queued"
+        },
+        {
+          "observed_at": "2026-11-28T00:58:29.315798+00:00",
+          "status": "failed",
+          "stage": "failed"
+        }
+      ],
+      "selected_source_available": false,
+      "diagnostic_download": {
+        "catalog_entries": 4,
+        "unique_objects_verified": 4,
+        "total_verified_bytes": 75071,
+        "artifact_kinds": [
+          "binary",
+          "log",
+          "package",
+          "source"
+        ]
+      }
+    }
+  },
+  "raw_client_evidence_directory": "var/website-demo/w03/client",
+  "limitations": [
+    "No generated or coverage-guided fuzz cases in the default verification plan used here.",
+    "Task-scoped agent_provenance absent on both generated proposals; provider identity unavailable from task RPC alone.",
+    "Native capability allows qualification; neither measured candidate qualified in this run.",
+    "GPU execution, other targets, AWS, model providers, browser API and per-agent progress were not validated."
+  ]
+}

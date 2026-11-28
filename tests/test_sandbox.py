@@ -193,3 +193,74 @@ def test_fuzzer_budget_cannot_weaken_default_policy():
         validate_host_config(
             current, memory=256, compile_mode=False, mounts={"/tmp": "bounded"}, fuzz_mode=True
         )
+
+
+def test_startup_headroom_must_be_removed_before_execution():
+    current = config()
+    current["PidsLimit"] = 64
+    validate_host_config(
+        current, memory=256, compile_mode=False, mounts={"/tmp": "bounded"}, startup=True
+    )
+    with pytest.raises(ValueError, match="PidsLimit"):
+        validate_host_config(current, memory=256, compile_mode=False, mounts={"/tmp": "bounded"})
+
+
+@pytest.mark.parametrize("release", [True, False])
+def test_attachment_withholds_workload_until_policy_verified(monkeypatch, tmp_path, release):
+    original = subprocess.Popen
+    accepted = tmp_path / "accepted"
+    script = (
+        "import os,sys\n"
+        "os.write(1,b'compiler-optimizer-')\n"
+        "os.write(1,b'ready-v1\\n')\n"
+        "data=sys.stdin.buffer.read()\n"
+        f"open({str(accepted)!r},'wb').write(data)\n"
+        "os.write(1,data)\n"
+    )
+    monkeypatch.setattr(
+        attachment.subprocess,
+        "Popen",
+        lambda *args, **kwargs: original([sys.executable, "-c", script], **kwargs),
+    )
+    guard = Mock()
+    guard.status.return_value = {"state": "armed"}
+    guard.process.poll.return_value = None
+
+    def verify():
+        assert not accepted.exists()
+        if not release:
+            raise RuntimeError("policy update failed")
+
+    # Larger than a pipe buffer: writing must remain bounded and avoid deadlocks.
+    payload = b"workload" * 100000
+    if release:
+        completed, reason = attachment.attach(
+            "unused", payload, guard, wall_seconds=10, on_ready=verify
+        )
+        assert reason is None
+        assert completed.returncode == 0
+        assert completed.stdout == payload  # The startup marker is not result data.
+        assert accepted.read_bytes() == payload
+    else:
+        with pytest.raises(RuntimeError, match="policy update failed"):
+            attachment.attach("unused", payload, guard, wall_seconds=10, on_ready=verify)
+        assert not accepted.exists()
+
+
+@pytest.mark.parametrize("output", ["", "unexpected startup output"])
+def test_missing_or_invalid_startup_handshake_never_releases_workload(monkeypatch, output):
+    original = subprocess.Popen
+    monkeypatch.setattr(
+        attachment.subprocess,
+        "Popen",
+        lambda *args, **kwargs: original(
+            [sys.executable, "-c", f"import sys; sys.stdout.write({output!r})"], **kwargs
+        ),
+    )
+    guard = Mock()
+    guard.status.return_value = {"state": "armed"}
+    guard.process.poll.return_value = None
+    verify = Mock()
+    with pytest.raises(attachment.AttachmentError, match="handshake"):
+        attachment.attach("unused", b"workload", guard, wall_seconds=10, on_ready=verify)
+    verify.assert_not_called()
