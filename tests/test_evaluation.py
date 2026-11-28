@@ -140,6 +140,11 @@ def test_release_excludes_credentials_preflights_evidence_and_refuses_overwrite(
     (tmp_path / "src/.env").write_text("SECRET=value")
     (tmp_path / ".env").write_text("SECRET=value")
     (tmp_path / ".env.example").write_text("SECRET=")
+    contracts = tmp_path / "contracts/web/v1"
+    (contracts / "fixtures").mkdir(parents=True)
+    (contracts / "schema.json").write_text('{"$defs":{}}')
+    (contracts / "openapi.json").write_text('{"openapi":"3.1.0"}')
+    (contracts / "fixtures/queued.json").write_text('{"state":"queued"}')
     evidence = tmp_path / "var/run"
     evidence.mkdir(parents=True)
     (evidence / "report.json").write_text('{"status":"failed"}')
@@ -152,6 +157,9 @@ def test_release_excludes_credentials_preflights_evidence_and_refuses_overwrite(
     with tarfile.open(destination) as archive:
         assert "project/src/code.py" in archive.getnames()
         assert "project/.env.example" in archive.getnames()
+        for name in ("schema.json", "openapi.json", "fixtures/queued.json"):
+            member = archive.extractfile("project/contracts/web/v1/" + name)
+            assert member.read() == (contracts / name).read_bytes()
         assert not any(p.endswith("/.env") for p in archive.getnames())
         assert "evidence/run/report.json" in archive.getnames()
     assert destination.with_name("release.tar.gz.sha256").exists()
