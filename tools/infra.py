@@ -611,7 +611,8 @@ def release_settings(config=CONFIG, require_owner=True):
     return settings, owner
 
 
-def prepare_release():
+def prepare_release(quiet=False):
+    """``quiet`` keeps init messages off stdout so command output stays parseable."""
     settings, owner = release_settings()
     backend = load_backend()
     session = aws_session(settings["region"])
@@ -619,6 +620,7 @@ def prepare_release():
     terraform(
         ["init", "-input=false", "-reconfigure", *backend_arguments(backend, "release")],
         RELEASE_STACK,
+        capture=quiet,
     )
     return [f"-var-file={CONFIG / 'release.tfvars.json'}", f"-var=cost_owner={owner}"]
 
@@ -651,7 +653,7 @@ def cmd_release_up(args):
 
 
 def cmd_release_output(_args):
-    prepare_release()
+    prepare_release(quiet=True)
     print(terraform(["output", "-json"], RELEASE_STACK, capture=True))
 
 
