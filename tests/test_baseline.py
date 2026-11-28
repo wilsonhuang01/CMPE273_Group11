@@ -376,3 +376,55 @@ def test_startup_gate_restores_execution_pid_limit_before_payload(
     with pytest.raises(InfrastructureError, match=message):
         runner._invoke({"wall_seconds": 2, "output_bytes": 1024}, memory=256, compile_mode=False)
     assert calls[-1][:2] == ["rm", "--force"]
+
+
+@pytest.mark.parametrize("fail_create", [True, False])
+def test_watchdog_is_armed_before_create_and_failed_intake_is_cleaned(
+    monkeypatch, tmp_path, fail_create
+):
+    runner = object.__new__(DockerRunner)
+    runner.hardware = json.dumps({"docker_engine": {"cpus": 4, "memory_bytes": 4 * 1024**3}})
+    runner._admission_engine = str(tmp_path)
+    runner.image = "sha256:" + "a" * 64
+    runner.target, runner.platform = "linux-x86_64", "linux/amd64"
+    runner.measurement_version = 2
+    events = []
+
+    def command(args, **kwargs):
+        events.append(args[0])
+        if args[0] == "create":
+            assert events == ["armed", "create"]
+            if fail_create:
+                raise InfrastructureError("create response lost")
+        return subprocess.CompletedProcess(args, 0, b"{}", b"")
+
+    monkeypatch.setattr(runner, "_command", command)
+    guard = mock_guard(monkeypatch, runner, command, tmp_path)
+    monkeypatch.setattr(guard, "start", lambda: events.append("armed"))
+    monkeypatch.setattr(guard, "finish", lambda reason: events.append("cleanup confirmed"))
+
+    def validate(*args, **kwargs):
+        raise InfrastructureError("inspection interrupted")
+
+    monkeypatch.setattr(runner, "_validate_container", validate)
+    message = "create response lost" if fail_create else "inspection interrupted"
+    with pytest.raises(InfrastructureError, match=message):
+        runner._invoke({"wall_seconds": 2, "output_bytes": 1024}, memory=256, compile_mode=False)
+    assert events == ["armed", "create", "rm", "cleanup confirmed"]
+
+
+def test_measurement_still_blocks_on_leftover_sandbox_and_identifies_it(tmp_path, monkeypatch):
+    runner = object.__new__(DockerRunner)
+    runner.hardware = json.dumps({"docker_engine": {"cpus": 4, "memory_bytes": 4 * 1024**3}})
+    runner._admission_engine = str(tmp_path)
+    calls = []
+
+    def command(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, b"abc123def456\n", b"")
+
+    monkeypatch.setattr(runner, "_command", command)
+    with pytest.raises(InfrastructureError, match="unconfirmed sandbox cleanup: abc123def456"):
+        with runner.work_window(exclusive=True):
+            pytest.fail("measurement must not start before cleanup is confirmed")
+    assert len(calls) == 1 and calls[0][0] == "ps"

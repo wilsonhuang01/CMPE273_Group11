@@ -1,7 +1,10 @@
 # Sandbox isolation and external watchdogs
 
 The baseline runner now enforces a versioned Docker/seccomp policy and arms a
-separate host watchdog process before starting each compilation or test container.
+separate host watchdog process before creating each compilation or test container.
+This covers owner loss during Docker creation and policy inspection, as well as
+execution. A failed create response still triggers cleanup because the daemon may
+already have created the container.
 Existing baseline commands use this automatically after rebuilding the toolchain:
 
 ```sh

@@ -580,7 +580,10 @@ class DockerRunner:
                     ["ps", "--all", "--quiet", "--filter", "label=compiler-optimizer.watchdog"]
                 ).stdout.strip()
                 if remaining:
-                    raise InfrastructureError("measurement blocked by unconfirmed sandbox cleanup")
+                    raise InfrastructureError(
+                        "measurement blocked by unconfirmed sandbox cleanup: "
+                        + remaining.decode("ascii", errors="replace")[:1024]
+                    )
             yield
 
     def measurement_window(self):
@@ -652,6 +655,15 @@ class DockerRunner:
             else ["--tmpfs", "/work/run:rw,exec,nosuid,size=32m,mode=0755"]
         )
         try:
+            try:
+                guard.start()
+            except (RuntimeError, OSError) as error:
+                raise InfrastructureError(
+                    f"cannot arm external watchdog; inspect {guard.directory}"
+                ) from error
+            # Cover process loss during create/inspect, including a Docker CLI
+            # failure after the daemon has already created the container.
+            created = True
             self._command(
                 [
                     "create",
@@ -721,7 +733,6 @@ class DockerRunner:
                     *([] if trusted_command is None else trusted_command[1:]),
                 ]
             )
-            created = True
             if lease_token is not None and lease_token in self._recovery_cancelled:
                 raise InfrastructureError("execution lease was cancelled")
             if lease is not None and lease.get("assert_live"):
@@ -748,12 +759,6 @@ class DockerRunner:
             )
             if lease is not None and lease.get("assert_live"):
                 lease["assert_live"]()
-            try:
-                guard.start()
-            except (RuntimeError, OSError) as error:
-                raise InfrastructureError(
-                    f"cannot arm external watchdog; inspect {guard.directory}"
-                ) from error
             try:
                 if lease is not None and lease.get("assert_live"):
                     lease["assert_live"]()
