@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "error": {
+    "code": "backend_unavailable",
+    "message": "Optimizer is unavailable; retry with the same request identity.",
+    "retryable": true,
+    "request_id": "11111111-1111-4111-8111-111111111111",
+    "task_id": null
+  }
+}

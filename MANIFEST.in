@@ -12,3 +12,5 @@ recursive-include monitoring *.yml *.json enabled_plugins
 recursive-include src *.proto *.json *.pyi *.sql
 
 include constraints.txt
+
+recursive-include contracts *.json

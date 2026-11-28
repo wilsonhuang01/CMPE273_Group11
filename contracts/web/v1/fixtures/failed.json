@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "task_id": "11111111-1111-4111-8111-111111111111",
+  "example_id": "sum-array",
+  "target": "linux-aarch64",
+  "state": "failed",
+  "stage": "failed",
+  "reason": "execution_attempts_exhausted",
+  "backend": "unavailable",
+  "backend_identity": null,
+  "execution_mode": "unavailable",
+  "result": null,
+  "downloads": {
+    "source": false,
+    "bundle": true
+  }
+}

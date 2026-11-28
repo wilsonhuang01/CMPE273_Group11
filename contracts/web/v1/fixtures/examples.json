@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "examples": [
+    {
+      "id": "sum-array",
+      "label": "Integer array sum (C17)",
+      "language": "c17",
+      "description": "Synthetic unavailable catalog example",
+      "example_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "sources": [
+        {
+          "name": "main.c",
+          "text": "/* synthetic preview */"
+        }
+      ],
+      "target": null,
+      "ready": false,
+      "unavailable_reason": "Native capability not established",
+      "backend": "unavailable",
+      "performance_qualified": false
+    }
+  ]
+}

@@ -2,7 +2,8 @@
 
 Defined November 27, 2026. This specifies the first local website milestone;
 the browser UI and Python API are planned in
-[W02–W11](../backlog/website-demo.html). It does not record a successful live
+[W04–W11](../backlog/website-demo.html). The [W02 API contract](website-api.md)
+defines schemas, fixtures and the AWS handoff record. It does not record a successful live
 website run. W03 will establish the reproducible backend baseline.
 
 ## Initial example and execution mode
@@ -79,8 +80,8 @@ or a coordinator restart must not automatically resubmit work.
 
 ## Required result information
 
-The result view must include these semantic fields; W02 defines their versioned
-browser names, error codes and representative fixtures:
+The result view must include these semantic fields; the [W02 contract](website-api.md)
+defines their versioned browser names, error codes and representative fixtures:
 
 - Identity and lifecycle: task ID, example, target, execution status, available
   stage, and failure/rejection reason. Keep connection state separate from task

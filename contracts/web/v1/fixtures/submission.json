@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "request_id": "11111111-1111-4111-8111-111111111111",
+  "example_id": "sum-array",
+  "example_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "target": "linux-aarch64"
+}
